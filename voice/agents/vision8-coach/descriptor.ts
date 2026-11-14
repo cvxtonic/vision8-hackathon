@@ -6,7 +6,7 @@ export const VISION8_COACH_DESCRIPTOR = {
   id: "vision8-coach",
   tenant: "vision8",
   version: 1,
-  persona: { name: "Coach", company: "Vision 8", language: "de-DE" },
+  persona: { name: "Clara", company: "Vision 8", language: "de-DE" },
   prompt: { instructions: VISION8_COACH_INSTRUCTIONS, opening: VISION8_COACH_OPENING },
   // Personal data (goals, how the day went): EU path only.
   model: { alias: "gemini-live-3.8-eu", allowed: ["gemini-live-3.8-eu"] },

@@ -16,33 +16,36 @@ struct VisionView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     hero
-                    VStack(alignment: .leading, spacing: 22) {
+                    Page {
                         if let profile {
                             Text(profile.vision)
-                                .font(.display(26))
-                                .lineSpacing(4)
+                                .font(.system(size: 21, weight: .regular, design: .serif)) // long text reads lighter than a title
+                                .lineSpacing(Space.xs - 2)
                                 .fixedSize(horizontal: false, vertical: true)
-                            VStack(alignment: .leading, spacing: 8) {
+                                .appear(1)
+                            VStack(alignment: .leading, spacing: Space.xs) {
                                 Eyebrow("Dein Warum")
-                                Text(profile.why).font(.quote).fixedSize(horizontal: false, vertical: true)
+                                Text(profile.why).font(.quote).foregroundStyle(Ink.paper.opacity(0.9)).fixedSize(horizontal: false, vertical: true)
                             }
-                            ValueChips(values: profile.values)
+                            .appear(2)
+                            ValueChips(values: profile.values).appear(3)
                         }
                         if !newBeliefs.isEmpty {
-                            VStack(alignment: .leading, spacing: 10) {
+                            VStack(alignment: .leading, spacing: Space.s) {
                                 Eyebrow("Was du heute über dich glaubst")
                                 ForEach(newBeliefs, id: \.self) { belief in
-                                    HStack(alignment: .top, spacing: 12) {
+                                    HStack(alignment: .top, spacing: Space.s) {
                                         Capsule().fill(Ink.dawn).frame(width: 3)
                                         Text(belief).font(.quote).fixedSize(horizontal: false, vertical: true)
                                     }
                                     .fixedSize(horizontal: false, vertical: true)
                                 }
                             }
+                            .appear(4)
                         }
-                        path
-                        if let error { ErrorNote(text: error) }
-                        HStack(spacing: 18) {
+                        if !steps.isEmpty { path.appear(5) }
+                        if let error { ErrorNote(text: error).transition(.opacity) }
+                        HStack(spacing: Space.page) {
                             Button { Task { await paint(fresh: true) } } label: { Label("Neues Bild", systemImage: "sparkles") }
                                 .disabled(painting)
                             Button { editing = true } label: { Label("Ziele ändern", systemImage: "pencil") }
@@ -51,10 +54,9 @@ struct VisionView: View {
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .foregroundStyle(Ink.muted)
                         .frame(minHeight: 44)
+                        .appear(6)
                     }
-                    .padding(.horizontal, 24)
-                    .padding(.top, 6)
-                    .padding(.bottom, 32)
+                    .animation(Motion.smooth, value: error)
                 }
             }
             .ignoresSafeArea(edges: .top)
@@ -62,6 +64,8 @@ struct VisionView: View {
         }
         .task { if model.state?.board == nil, !painting { await paint(fresh: false) } }
         .sheet(isPresented: $editing) { GoalsView() }
+        // A new picture arrived (not the first load).
+        .sensoryFeedback(trigger: model.state?.board?.image) { old, new in old != nil && new != nil && old != new ? .success : nil }
     }
 
     /// The picture, fading into the page, with the caption on top of its lower edge.
@@ -69,65 +73,81 @@ struct VisionView: View {
         ZStack(alignment: .bottomLeading) {
             Group {
                 if let board = model.state?.board, let url = URL(string: board.image) {
-                    AsyncImage(url: url, transaction: Transaction(animation: .easeOut(duration: 0.6))) { phase in
-                        if let image = phase.image {
-                            image.resizable().scaledToFill()
-                        } else {
+                    AsyncImage(url: url, transaction: Transaction(animation: Motion.gentle)) { phase in
+                        switch phase {
+                        case .success(let image):
+                            image.resizable().scaledToFill().transition(.opacity)
+                        case .failure:
                             Ink.surface
+                        default:
+                            Skeleton(height: 460)
                         }
                     }
+                    .id(board.image) // a new picture fades in again
                 } else {
-                    ZStack {
-                        Ink.surface
-                        if painting { CoachThinking(text: "Dein Vision Board entsteht") }
-                    }
+                    Skeleton(height: 460)
+                        .overlay { if painting { CoachThinking(text: "Dein Vision Board entsteht") } }
                 }
             }
             .frame(height: 460)
             .frame(maxWidth: .infinity)
             .clipped()
-            .overlay(LinearGradient(colors: [.clear, .clear, Ink.night.opacity(0.75), Ink.night], startPoint: .top, endPoint: .bottom))
+            .overlay(LinearGradient(colors: [Ink.night.opacity(0.35), .clear, .clear, Ink.night.opacity(0.75), Ink.night], startPoint: .top, endPoint: .bottom))
             .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 Eyebrow("Deine Vision")
                 if let caption = model.state?.board?.caption, !caption.isEmpty {
-                    Text(caption).font(.display(22)).fixedSize(horizontal: false, vertical: true)
+                    Text(caption)
+                        .font(.pageTitle)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.bottom, 18)
+            .padding(.horizontal, Space.page)
+            .padding(.bottom, Space.xs)
+            .animation(Motion.smooth, value: model.state?.board?.caption)
+            .appear(0)
         }
     }
 
-    /// Ten years down to this month, as a line of milestones.
+    private var steps: [Goal] {
+        ["10y", "3y", "1y", "month"].compactMap { h in goals.first { $0.horizon == h } }
+    }
+
+    /// Ten years down to this month, as a line of milestones; this month is the lit one.
     private var path: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Eyebrow("Dein Weg dorthin").padding(.bottom, 12)
-            let order = ["10y", "3y", "1y", "month"]
-            let steps = order.compactMap { h in goals.first { $0.horizon == h } }
-            ForEach(Array(steps.enumerated()), id: \.offset) { index, goal in
-                HStack(alignment: .top, spacing: 14) {
-                    VStack(spacing: 0) {
-                        Circle()
-                            .fill(index == steps.count - 1 ? Ink.dawn : Ink.surface)
-                            .overlay(Circle().strokeBorder(Ink.dawn, lineWidth: 2))
-                            .frame(width: 14, height: 14)
-                            .padding(.top, 3)
-                        if index < steps.count - 1 {
-                            Rectangle().fill(Ink.dawn.opacity(0.35)).frame(width: 2).frame(maxHeight: .infinity)
+        VStack(alignment: .leading, spacing: Space.m) {
+            SectionHeader(title: "Dein Weg dorthin")
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(steps.enumerated()), id: \.offset) { index, goal in
+                    let last = index == steps.count - 1
+                    HStack(alignment: .top, spacing: Space.m) {
+                        VStack(spacing: 0) {
+                            Circle()
+                                .fill(last ? Ink.dawn : Ink.night)
+                                .overlay(Circle().strokeBorder(last ? Ink.dawn : Ink.dawn.opacity(0.6), lineWidth: 1.5))
+                                .frame(width: 12, height: 12)
+                                .shadow(color: last ? Ink.dawn.opacity(0.6) : .clear, radius: 6)
+                                .padding(.top, Space.xxs)
+                            if !last {
+                                Rectangle().fill(Ink.dawn.opacity(0.25)).frame(width: 1).frame(maxHeight: .infinity)
+                            }
                         }
+                        .frame(width: 12)
+                        VStack(alignment: .leading, spacing: Space.xxs) {
+                            Text("\(goal.horizonLabel) · bis \(germanDate(goal.deadline))")
+                                .font(.label)
+                                .kerning(0.6)
+                                .foregroundStyle(last ? Ink.dawn : Ink.muted)
+                            Text(goal.title)
+                                .font(.system(.body, design: .serif).weight(.medium))
+                                .foregroundStyle(last ? Ink.paper : Ink.paper.opacity(0.85))
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.bottom, last ? 0 : Space.page)
                     }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("\(goal.horizonLabel) · bis \(germanDate(goal.deadline))")
-                            .font(.label)
-                            .foregroundStyle(Ink.muted)
-                        Text(goal.title)
-                            .font(.system(.body, design: .serif).weight(.medium))
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .padding(.bottom, 18)
+                    .accessibilityElement(children: .combine)
                 }
-                .accessibilityElement(children: .combine)
             }
         }
     }
@@ -152,9 +172,10 @@ struct VisionView: View {
         defer { painting = false }
         do {
             let board = try await model.api.board(fresh: fresh)
-            withAnimation { model.state?.board = board }
+            withAnimation(Motion.smooth) { model.state?.board = board }
         } catch {
             self.error = error.localizedDescription
         }
     }
 }
+

@@ -11,10 +11,117 @@ enum Ink {
     static let drift = Color(red: 0.93, green: 0.48, blue: 0.42)
 }
 
+// MARK: - Design tokens (see STYLEGUIDE.md). Use these instead of raw numbers.
+
+/// Spacing scale. Page margin is `page`; space between sections is `section`; inside a card `m`.
+enum Space {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let s: CGFloat = 12
+    static let m: CGFloat = 16
+    static let page: CGFloat = 20
+    static let section: CGFloat = 28
+    static let xl: CGFloat = 40
+}
+
+/// Corner radii, always with `.continuous` corners.
+enum Radius {
+    static let card: CGFloat = 22
+    static let control: CGFloat = 16
+    static let row: CGFloat = 14
+}
+
+/// Motion: three curves only. `snappy` for taps and toggles, `smooth` for content changes, `gentle` for entrances.
+enum Motion {
+    static let snappy = Animation.spring(response: 0.28, dampingFraction: 0.82)
+    static let smooth = Animation.easeInOut(duration: 0.32)
+    static let gentle = Animation.spring(response: 0.55, dampingFraction: 0.9)
+}
+
 extension Font {
     static func display(_ size: CGFloat) -> Font { .system(size: size, weight: .semibold, design: .serif) }
     static let quote = Font.system(.title3, design: .serif).italic()
     static let label = Font.system(.caption, design: .rounded).weight(.semibold)
+
+    // Type scale (Dynamic Type aware where it matters).
+    static let pageTitle = Font.system(size: 34, weight: .semibold, design: .serif)
+    static let sectionTitle = Font.system(size: 22, weight: .semibold, design: .serif)
+    static let cardTitle = Font.system(.headline, design: .rounded)
+    static let bodyText = Font.system(.body, design: .rounded)
+    static let callout = Font.system(.subheadline, design: .rounded)
+    static let note = Font.system(.footnote, design: .rounded)
+}
+
+/// Page layout: the one vertical rhythm for every tab.
+struct Page<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.section) { content }
+            .padding(.horizontal, Space.page)
+            .padding(.top, Space.m)
+            .padding(.bottom, Space.xl + 60) // room for the tab bar and the coach bar
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// Title and optional hint above a group of content.
+struct SectionHeader: View {
+    let title: String
+    var hint: String?
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.xxs) {
+            Text(title).font(.sectionTitle)
+            if let hint { Text(hint).font(.note).foregroundStyle(Ink.muted) }
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+}
+
+/// Entrance: fade and rise a little, staggered by `index`. Respects Reduce Motion.
+private struct Appear: ViewModifier {
+    let index: Int
+    @State private var shown = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    func body(content: Content) -> some View {
+        content
+            .opacity(shown ? 1 : 0)
+            .offset(y: shown || reduceMotion ? 0 : 10)
+            .onAppear {
+                withAnimation(Motion.gentle.delay(reduceMotion ? 0 : Double(min(index, 8)) * 0.05)) { shown = true }
+            }
+    }
+}
+
+extension View {
+    func appear(_ index: Int = 0) -> some View { modifier(Appear(index: index)) }
+}
+
+/// Placeholder block that shimmers while content loads (instead of a spinner).
+struct Skeleton: View {
+    var height: CGFloat = 52
+    @State private var phase: CGFloat = -1
+    var body: some View {
+        RoundedRectangle(cornerRadius: Radius.row, style: .continuous)
+            .fill(Ink.surface)
+            .overlay(
+                LinearGradient(colors: [.clear, Color.white.opacity(0.06), .clear], startPoint: .leading, endPoint: .trailing)
+                    .offset(x: phase * 260)
+                    .clipShape(RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+            )
+            .frame(height: height)
+            .onAppear { withAnimation(.linear(duration: 1.3).repeatForever(autoreverses: false)) { phase = 1.4 } }
+            .accessibilityHidden(true)
+    }
+}
+
+/// List rows: a soft highlight while pressed, no scaling (rows sit edge to edge).
+struct RowPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(Color.white.opacity(configuration.isPressed ? 0.05 : 0))
+            .animation(Motion.snappy, value: configuration.isPressed)
+    }
 }
 
 struct Eyebrow: View {
@@ -31,11 +138,11 @@ struct Eyebrow: View {
 struct Card<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) { content }
+        VStack(alignment: .leading, spacing: Space.s) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(18)
-            .background(Ink.surface, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).strokeBorder(Ink.line))
+            .padding(Space.page)
+            .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Ink.line))
     }
 }
 
@@ -49,11 +156,13 @@ struct PressStyle: ButtonStyle {
             .font(.system(.headline, design: .rounded))
             .foregroundStyle(filled ? Ink.night : Ink.paper)
             .frame(maxWidth: .infinity, minHeight: 54)
-            .background(filled ? Ink.dawn : Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(filled ? .clear : Ink.line))
+            .background(filled ? Ink.dawn : Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(filled ? .clear : Ink.line))
+            .brightness(configuration.isPressed ? -0.04 : 0)
             .opacity(enabled ? 1 : 0.4)
             .scaleEffect(configuration.isPressed ? 0.97 : 1)
-            .animation(.spring(response: 0.25, dampingFraction: 0.7), value: configuration.isPressed)
+            .animation(Motion.snappy, value: configuration.isPressed)
+            .sensoryFeedback(.impact(weight: .light), trigger: configuration.isPressed) { _, pressed in pressed }
     }
 }
 

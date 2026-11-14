@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import SwiftUI
 import UIKit
 
 struct Area: Identifiable, Hashable {
@@ -7,14 +8,16 @@ struct Area: Identifiable, Hashable {
     let title: String
     let hint: String
     let symbol: String
+    /** The area's own colour: its ring on Heute and its share of the day score ring. */
+    let color: Color
 
     static let all: [Area] = [
-        Area(id: "karriere", title: "Karriere", hint: "Beruf, Aufstieg, eigenes Ding", symbol: "briefcase"),
-        Area(id: "finanzen", title: "Finanzen", hint: "Einkommen, Rücklagen, Freiheit", symbol: "chart.line.uptrend.xyaxis"),
-        Area(id: "beziehungen", title: "Beziehungen", hint: "Partnerschaft, Familie, Freunde", symbol: "heart"),
-        Area(id: "gesundheit", title: "Gesundheit", hint: "Körper, Energie, Schlaf", symbol: "figure.run"),
-        Area(id: "privatleben", title: "Privatleben", hint: "Zeit, Hobbys, Wohnen", symbol: "house"),
-        Area(id: "persoenlichkeit", title: "Persönlichkeit", hint: "Wer ich sein will", symbol: "sparkles"),
+        Area(id: "karriere", title: "Karriere", hint: "Beruf, Aufstieg, eigenes Ding", symbol: "briefcase", color: Color(red: 0.42, green: 0.66, blue: 0.98)),
+        Area(id: "finanzen", title: "Finanzen", hint: "Einkommen, Rücklagen, Freiheit", symbol: "chart.line.uptrend.xyaxis", color: Color(red: 0.31, green: 0.80, blue: 0.72)),
+        Area(id: "beziehungen", title: "Beziehungen", hint: "Partnerschaft, Familie, Freunde", symbol: "heart", color: Color(red: 0.96, green: 0.53, blue: 0.63)),
+        Area(id: "gesundheit", title: "Gesundheit", hint: "Körper, Energie, Schlaf", symbol: "figure.run", color: Color(red: 0.60, green: 0.86, blue: 0.42)),
+        Area(id: "privatleben", title: "Privatleben", hint: "Zeit, Hobbys, Wohnen", symbol: "house", color: Color(red: 0.99, green: 0.62, blue: 0.43)),
+        Area(id: "persoenlichkeit", title: "Persönlichkeit", hint: "Wer ich sein will", symbol: "sparkles", color: Color(red: 0.68, green: 0.57, blue: 0.99)),
     ]
 }
 

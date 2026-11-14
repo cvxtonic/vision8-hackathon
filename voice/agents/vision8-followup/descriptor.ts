@@ -8,7 +8,7 @@ export const VISION8_FOLLOWUP_DESCRIPTOR = {
   id: "vision8-followup",
   tenant: "vision8",
   version: 1,
-  persona: { name: "Coach", company: "Vision 8", language: "de-DE" },
+  persona: { name: "Clara", company: "Vision 8", language: "de-DE" },
   prompt: { instructions: VISION8_FOLLOWUP_INSTRUCTIONS, opening: VISION8_FOLLOWUP_OPENING },
   // Personal data (beliefs, values, life history): EU path only.
   model: { alias: "gemini-live-3.8-eu", allowed: ["gemini-live-3.8-eu"] },

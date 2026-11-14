@@ -5,34 +5,52 @@ struct GoalsView: View {
     @State private var changing: Goal?
     @State private var error: String?
 
+    private static let insert = AnyTransition.opacity.combined(with: .move(edge: .top))
+
     var body: some View {
         Screen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Eyebrow("Dein Zielvertrag")
-                    if let profile = model.state?.profile {
-                        Text(profile.vision).font(.display(22)).lineSpacing(3)
-                        ValueChips(values: profile.values)
+                Page {
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Eyebrow("Dein Zielvertrag")
+                        if let profile = model.state?.profile {
+                            Text(profile.vision)
+                                .font(.sectionTitle)
+                                .lineSpacing(Space.xxs)
+                                .fixedSize(horizontal: false, vertical: true)
+                            ValueChips(values: profile.values)
+                        }
                     }
+                    .appear(0)
+
                     if let pending = model.state?.pendingChange {
                         PendingCard(pending: pending) { confirm in
                             Task { await resolve(pending, confirm: confirm) }
                         }
+                        .transition(Self.insert)
                     }
-                    if let error { ErrorNote(text: error) }
-                    ForEach(model.state?.goals ?? [], id: \.key) { goal in
-                        VStack(alignment: .leading, spacing: 6) {
-                            GoalCard(goal: goal)
-                            if model.state?.pendingChange == nil {
-                                Button("Änderung beantragen") { changing = goal }
-                                    .font(.system(.footnote, design: .rounded).weight(.semibold))
-                                    .foregroundStyle(Ink.muted)
-                                    .frame(minHeight: 44)
+
+                    if let error { ErrorNote(text: error).transition(Self.insert) }
+
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        ForEach(Array((model.state?.goals ?? []).enumerated()), id: \.element.key) { index, goal in
+                            VStack(alignment: .leading, spacing: 0) {
+                                GoalCard(goal: goal)
+                                if model.state?.pendingChange == nil {
+                                    Button("Änderung beantragen") { changing = goal }
+                                        .font(.note.weight(.semibold))
+                                        .foregroundStyle(Ink.muted)
+                                        .padding(.horizontal, Space.xxs)
+                                        .frame(minHeight: 44)
+                                        .transition(.opacity)
+                                }
                             }
+                            .appear(index + 1)
                         }
                     }
                 }
-                .padding(24)
+                .animation(Motion.smooth, value: model.state?.pendingChange)
+                .animation(Motion.smooth, value: error)
             }
             .refreshable { await model.refresh() }
         }
@@ -45,6 +63,7 @@ struct GoalsView: View {
         do {
             try await model.api.resolveChange(id: pending.id, confirm: confirm)
             error = nil
+            Haptics.success()
             await model.refresh()
         } catch {
             self.error = error.localizedDescription
@@ -65,17 +84,23 @@ private struct PendingCard: View {
         let ready = pending.effectiveDate <= .now
         Card {
             Eyebrow(ready ? "Bedenkzeit vorbei" : "In Bedenkzeit")
-            Text("Neuer Wunsch: \(pending.proposed)").font(.system(.subheadline, design: .rounded).weight(.semibold))
-            Text(pending.coach_reply).font(.system(.subheadline, design: .serif))
+            Text("Neuer Wunsch: \(pending.proposed)")
+                .font(.cardTitle)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(pending.coach_reply)
+                .font(.system(.callout, design: .serif))
+                .lineSpacing(Space.xxs)
+                .fixedSize(horizontal: false, vertical: true)
             if !ready {
                 Text("Bestätigen möglich ab \(pending.effectiveDate.formatted(.dateTime.weekday(.wide).hour().minute().locale(Locale(identifier: "de_DE")))).")
-                    .font(.system(.footnote, design: .rounded))
+                    .font(.note)
                     .foregroundStyle(Ink.muted)
             }
-            HStack(spacing: 10) {
+            HStack(spacing: Space.xs) {
                 Button("Beim Ziel bleiben") { resolve(false) }.buttonStyle(PressStyle())
                 Button("Ändern") { resolve(true) }.buttonStyle(PressStyle(filled: false)).disabled(!ready)
             }
+            .padding(.top, Space.xxs)
         }
     }
 }
@@ -92,28 +117,48 @@ private struct ChangeSheet: View {
     var body: some View {
         Screen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Ziel ändern").font(.display(26))
-                    Text("Dein Ziel ist bewusst fest, damit ein schlechter Tag es nicht kippt. Eine Änderung braucht einen Grund und 48 Stunden Bedenkzeit.")
-                        .font(.system(.subheadline, design: .rounded))
-                        .foregroundStyle(Ink.muted)
+                Page {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        Text("Ziel ändern").font(.pageTitle)
+                            .accessibilityAddTraits(.isHeader)
+                        Text("Dein Ziel ist bewusst fest, damit ein schlechter Tag es nicht kippt. Eine Änderung braucht einen Grund und 48 Stunden Bedenkzeit.")
+                            .font(.callout)
+                            .foregroundStyle(Ink.muted)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .appear(0)
+
                     Card {
                         Eyebrow("Bisher · \(goal.horizonLabel)")
-                        Text(goal.title).font(.system(.body, design: .serif))
+                        Text(goal.title)
+                            .font(.system(.body, design: .serif))
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    field("Neues Ziel in einem Satz", text: $proposed)
-                    field("Warum willst du es ändern?", text: $reason)
-                    if let error { ErrorNote(text: error) }
-                    if busy {
-                        CoachThinking()
-                    } else {
-                        Button("Bedenkzeit starten") { Task { await submit() } }
-                            .buttonStyle(PressStyle())
-                            .disabled(proposed.trimmingCharacters(in: .whitespacesAndNewlines).count < 5 || reason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10)
-                        Button("Abbrechen") { dismiss() }.buttonStyle(PressStyle(filled: false))
+                    .appear(1)
+
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        field("Neues Ziel in einem Satz", text: $proposed)
+                        field("Warum willst du es ändern?", text: $reason)
+                        if let error { ErrorNote(text: error).transition(.opacity) }
                     }
+                    .appear(2)
+
+                    VStack(spacing: Space.s) {
+                        if busy {
+                            CoachThinking()
+                                .frame(maxWidth: .infinity, minHeight: 54)
+                                .transition(.opacity)
+                        } else {
+                            Button("Bedenkzeit starten") { Task { await submit() } }
+                                .buttonStyle(PressStyle())
+                                .disabled(proposed.trimmingCharacters(in: .whitespacesAndNewlines).count < 5 || reason.trimmingCharacters(in: .whitespacesAndNewlines).count < 10)
+                            Button("Abbrechen") { dismiss() }.buttonStyle(PressStyle(filled: false))
+                        }
+                    }
+                    .appear(3)
                 }
-                .padding(24)
+                .animation(Motion.smooth, value: busy)
+                .animation(Motion.smooth, value: error)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -122,10 +167,10 @@ private struct ChangeSheet: View {
     private func field(_ title: String, text: Binding<String>) -> some View {
         TextField(title, text: text, axis: .vertical)
             .lineLimit(2...5)
-            .font(.system(.body, design: .rounded))
-            .padding(14)
-            .background(Ink.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+            .font(.bodyText)
+            .padding(Space.m)
+            .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Ink.line))
     }
 
     private func submit() async {

@@ -21,13 +21,58 @@ struct OnboardingFlow: View {
             } else if started {
                 AreaPicker()
             } else {
-                Welcome { withAnimation { started = true } }
+                Welcome { withAnimation(Motion.smooth) { started = true } }
             }
         }
-        .transition(.opacity)
+        // Steps rise in a little and fade; the leaving step only fades, so two never collide.
+        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 14)), removal: .opacity))
         // Restarting the interview leads back to the very first screen.
         .onChange(of: model.progress == nil) { _, cleared in
             if cleared { started = false }
+        }
+    }
+}
+
+/// Small secondary text button used under the main actions of a step.
+private struct QuietButton: View {
+    let title: String
+    let action: () -> Void
+    init(_ title: String, action: @escaping () -> Void) {
+        self.title = title
+        self.action = action
+    }
+    var body: some View {
+        Button(title, action: action)
+            .font(.system(.subheadline, design: .rounded).weight(.semibold))
+            .foregroundStyle(Ink.muted)
+            .frame(maxWidth: .infinity, minHeight: 44)
+    }
+}
+
+/// Text field on a surface, with a soft dawn edge while focused.
+private struct FieldBackground: ViewModifier {
+    var focused: Bool
+    func body(content: Content) -> some View {
+        content
+            .padding(Space.m)
+            .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Radius.control, style: .continuous)
+                    .strokeBorder(focused ? Ink.dawn.opacity(0.55) : Ink.line)
+            )
+            .animation(Motion.snappy, value: focused)
+    }
+}
+
+/// "The contract is being written": shared by the typed and the live interview.
+private struct WritingNote: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            Text("Ich schreibe deinen Zielvertrag.").font(.display(28))
+            Text("Aus unserem Gespräch entstehen deine Vision, dein Warum und deine Ziele – von drei Jahren bis zu diesem Monat. Das dauert etwa eine halbe Minute.")
+                .font(.bodyText)
+                .foregroundStyle(Ink.muted)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -44,26 +89,29 @@ private struct Welcome: View {
     var body: some View {
         Screen {
             VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 12)
-                Eyebrow("Vision 8 · Vision Aid")
-                Text("Ziele, die du\nwirklich erreichst.")
-                    .font(.display(38))
-                    .padding(.top, 12)
-                Text("Ein Coach, der dich an die Hand nimmt – vom ersten Ziel bis zum Tag, an dem du es geschafft hast.")
-                    .font(.system(.body, design: .rounded))
-                    .foregroundStyle(Ink.muted)
-                    .padding(.top, 14)
-                VStack(alignment: .leading, spacing: 20) {
+                Spacer(minLength: Space.s)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Eyebrow("Vision 8 · Vision Aid")
+                    Text("Ziele, die du\nwirklich erreichst.")
+                        .font(.display(40))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Ein Coach, der dich an die Hand nimmt – vom ersten Ziel bis zum Tag, an dem du es geschafft hast.")
+                        .font(.bodyText)
+                        .foregroundStyle(Ink.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .appear(0)
+                VStack(alignment: .leading, spacing: Space.page) {
                     ForEach(Array(steps.enumerated()), id: \.offset) { index, step in
-                        HStack(alignment: .top, spacing: 14) {
+                        HStack(alignment: .top, spacing: Space.m) {
                             Text("\(index + 1)")
                                 .font(.system(.headline, design: .serif))
-                                .foregroundStyle(Ink.night)
-                                .frame(width: 30, height: 30)
-                                .background(Ink.dawn, in: Circle())
+                                .foregroundStyle(Ink.dawn)
+                                .frame(width: 32, height: 32)
+                                .overlay(Circle().strokeBorder(Ink.dawn.opacity(0.4)))
                                 .accessibilityHidden(true)
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(step.title).font(.system(.headline, design: .rounded))
+                            VStack(alignment: .leading, spacing: Space.xxs) {
+                                Text(step.title).font(.cardTitle)
                                 Text(step.text)
                                     .font(.system(.subheadline, design: .rounded))
                                     .foregroundStyle(Ink.muted)
@@ -71,19 +119,23 @@ private struct Welcome: View {
                             }
                         }
                         .accessibilityElement(children: .combine)
+                        .appear(index + 1)
                     }
                 }
-                .padding(.top, 32)
-                Spacer(minLength: 20)
-                Button("Erstgespräch starten", action: start).buttonStyle(PressStyle())
-                Text("Etwa 5 Minuten, meist nur antippen. Deine Antworten bleiben in der EU.")
-                    .font(.system(.footnote, design: .rounded))
-                    .foregroundStyle(Ink.muted)
-                    .frame(maxWidth: .infinity)
-                    .multilineTextAlignment(.center)
-                    .padding(.top, 12)
+                .padding(.top, Space.xl)
+                Spacer(minLength: Space.page)
+                VStack(spacing: Space.s) {
+                    Button("Erstgespräch starten", action: start).buttonStyle(PressStyle())
+                    Text("Etwa 5 Minuten, meist nur antippen. Deine Antworten bleiben in der EU.")
+                        .font(.note)
+                        .foregroundStyle(Ink.muted)
+                        .frame(maxWidth: .infinity)
+                        .multilineTextAlignment(.center)
+                }
+                .appear(steps.count + 1)
             }
-            .padding(28)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.m)
         }
     }
 }
@@ -104,32 +156,47 @@ private struct NameStep: View {
 
     var body: some View {
         Screen {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
                 Spacer()
-                Eyebrow("Dein Coach")
-                Text("Schön, dass du da bist. Wie darf ich dich nennen?").font(.display(30))
-                TextField("Dein Vorname", text: $name)
-                    .textContentType(.givenName)
-                    .textInputAutocapitalization(.words)
-                    .autocorrectionDisabled()
-                    .submitLabel(.done)
-                    .focused($focused)
-                    .font(.system(.title3, design: .rounded))
-                    .padding(16)
-                    .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.line))
-                    .onSubmit { if valid { Task { await save() } } }
-                if let error { ErrorNote(text: error) }
-                Spacer()
-                if busy {
-                    CoachThinking(text: "Einen Moment")
-                } else {
-                    Button("Weiter") { Task { await save() } }
-                        .buttonStyle(PressStyle())
-                        .disabled(!valid)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Eyebrow("Dein Coach")
+                    Text("Schön, dass du da bist. Wie darf ich dich nennen?")
+                        .font(.display(30))
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .appear(0)
+                VStack(alignment: .leading, spacing: Space.s) {
+                    TextField("Dein Vorname", text: $name)
+                        .textContentType(.givenName)
+                        .textInputAutocapitalization(.words)
+                        .autocorrectionDisabled()
+                        .submitLabel(.done)
+                        .focused($focused)
+                        .font(.system(.title3, design: .rounded))
+                        .modifier(FieldBackground(focused: focused))
+                        .onSubmit { if valid { Task { await save() } } }
+                    if let error { ErrorNote(text: error).transition(.opacity) }
+                }
+                .padding(.top, Space.section)
+                .appear(1)
+                Spacer()
+                Group {
+                    if busy {
+                        CoachThinking(text: "Einen Moment")
+                            .frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
+                    } else {
+                        Button("Weiter") { Task { await save() } }
+                            .buttonStyle(PressStyle())
+                            .disabled(!valid)
+                    }
+                }
+                .transition(.opacity)
             }
-            .padding(28)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.m)
+            .animation(Motion.smooth, value: busy)
+            .animation(Motion.smooth, value: error)
+            .animation(Motion.snappy, value: valid)
         }
         .onAppear { focused = true }
     }
@@ -141,7 +208,7 @@ private struct NameStep: View {
         do {
             try await model.api.saveName(cleaned)
             Haptics.tap()
-            withAnimation { model.name = cleaned }
+            withAnimation(Motion.smooth) { model.name = cleaned }
         } catch {
             self.error = error.localizedDescription
         }
@@ -150,43 +217,84 @@ private struct NameStep: View {
 
 private struct AreaPicker: View {
     @Environment(AppModel.self) private var model
+    /** The tapped area lights up briefly before the next step comes in. */
+    @State private var selected: String?
 
     var body: some View {
         Screen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Eyebrow("Schritt 1")
-                    Text(model.name.map { "\($0), was ist dir in deiner jetzigen Lage am wichtigsten?" } ?? "Was ist dir in deiner jetzigen Lage am wichtigsten?").font(.display(30))
-                    Text("Wir starten dort. Weitere Bereiche kannst du später dazunehmen.")
-                        .font(.system(.subheadline, design: .rounded))
-                        .foregroundStyle(Ink.muted)
-                    LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible())], spacing: 12) {
-                        ForEach(Area.all) { area in
-                            Button {
-                                Haptics.tap()
-                                withAnimation { model.progress = InterviewProgress(area: area.id) }
-                            } label: {
-                                VStack(alignment: .leading, spacing: 8) {
-                                    Image(systemName: area.symbol).font(.title2).foregroundStyle(Ink.dawn)
-                                    Text(area.title).font(.system(.headline, design: .rounded))
-                                    Text(area.hint)
-                                        .font(.system(.caption, design: .rounded))
-                                        .foregroundStyle(Ink.muted)
-                                        .multilineTextAlignment(.leading)
-                                }
-                                .frame(maxWidth: .infinity, minHeight: 104, alignment: .topLeading)
-                                .padding(16)
-                                .background(Ink.surface, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Ink.line))
-                            }
-                            .buttonStyle(.plain)
+                VStack(alignment: .leading, spacing: Space.section) {
+                    VStack(alignment: .leading, spacing: Space.s) {
+                        Eyebrow("Schritt 1")
+                        Text(model.name.map { "\($0), was ist dir in deiner jetzigen Lage am wichtigsten?" } ?? "Was ist dir in deiner jetzigen Lage am wichtigsten?")
+                            .font(.display(30))
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text("Wir starten dort. Weitere Bereiche kannst du später dazunehmen.")
+                            .font(.system(.subheadline, design: .rounded))
+                            .foregroundStyle(Ink.muted)
+                    }
+                    .appear(0)
+                    LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s), GridItem(.flexible())], spacing: Space.s) {
+                        ForEach(Array(Area.all.enumerated()), id: \.element.id) { index, area in
+                            Button { pick(area) } label: { card(area, on: selected == area.id) }
+                                .buttonStyle(AreaPress())
+                                .disabled(selected != nil && selected != area.id)
+                                .accessibilityAddTraits(selected == area.id ? .isSelected : [])
+                                .appear(index + 1)
                         }
                     }
-                    .padding(.top, 8)
                 }
-                .padding(28)
+                .padding(.horizontal, Space.page)
+                .padding(.vertical, Space.m)
             }
         }
+        .sensoryFeedback(.selection, trigger: selected)
+    }
+
+    private func card(_ area: Area, on: Bool) -> some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            Image(systemName: area.symbol)
+                .font(.title2)
+                .foregroundStyle(on ? Ink.night : Ink.dawn)
+                .frame(width: 44, height: 44)
+                .background(on ? Ink.dawn : Ink.dawn.opacity(0.12), in: Circle())
+                .padding(.bottom, Space.xxs)
+            Text(area.title).font(.cardTitle)
+            Text(area.hint)
+                .font(.note)
+                .foregroundStyle(Ink.muted)
+                .multilineTextAlignment(.leading)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, minHeight: 128, alignment: .topLeading)
+        .padding(Space.m)
+        .background(on ? Ink.dawn.opacity(0.10) : Ink.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+                .strokeBorder(on ? Ink.dawn.opacity(0.7) : Ink.line, lineWidth: on ? 1.5 : 1)
+        )
+        .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+    }
+
+    private func pick(_ area: Area) {
+        guard selected == nil else { return }
+        Haptics.tap()
+        withAnimation(Motion.snappy) { selected = area.id }
+        Task {
+            // A short beat so the selection is seen before the step changes.
+            try? await Task.sleep(for: .milliseconds(260))
+            withAnimation(Motion.smooth) { model.progress = InterviewProgress(area: area.id) }
+        }
+    }
+}
+
+/// Area cards sink a little while pressed.
+private struct AreaPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.97 : 1)
+            .brightness(configuration.isPressed ? -0.03 : 0)
+            .animation(Motion.snappy, value: configuration.isPressed)
     }
 }
 
@@ -197,40 +305,49 @@ private struct ModeChooser: View {
 
     var body: some View {
         Screen {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 0) {
                 Spacer()
-                Eyebrow("Schritt 2")
-                Text("Wie möchtest du mit deinem Coach sprechen?").font(.display(30))
-                Text("Im Gespräch lernt dich dein Coach in etwa zehn Minuten kennen: Er fragt, du erzählst, er hört zu. Du kannst jederzeit zum Tippen wechseln.")
-                    .font(.system(.subheadline, design: .rounded))
-                    .foregroundStyle(Ink.muted)
-                if denied {
-                    ErrorNote(text: "Das Mikrofon ist für Vision 8 nicht freigegeben. Du kannst das in den iOS-Einstellungen ändern oder jetzt tippen.")
-                }
-                Spacer()
-                Button {
-                    Task {
-                        if await LiveVoice.authorize() {
-                            Haptics.tap()
-                            withAnimation { model.progress?.live = true }
-                        } else {
-                            denied = true
-                        }
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Eyebrow("Schritt 2")
+                    Text("Wie möchtest du mit deinem Coach sprechen?")
+                        .font(.display(30))
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Im Gespräch lernt dich dein Coach in etwa zehn Minuten kennen: Er fragt, du erzählst, er hört zu. Du kannst jederzeit zum Tippen wechseln.")
+                        .font(.system(.subheadline, design: .rounded))
+                        .foregroundStyle(Ink.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if denied {
+                        ErrorNote(text: "Das Mikrofon ist für Vision 8 nicht freigegeben. Du kannst das in den iOS-Einstellungen ändern oder jetzt tippen.")
+                            .padding(.top, Space.xs)
+                            .transition(.opacity)
                     }
-                } label: {
-                    Label("Im Gespräch", systemImage: "waveform")
                 }
-                .buttonStyle(PressStyle())
-                Button("Lieber antippen und tippen") {
-                    withAnimation { model.progress?.voice = false }
+                .appear(0)
+                Spacer()
+                VStack(spacing: Space.s) {
+                    Button {
+                        Task {
+                            if await LiveVoice.authorize() {
+                                Haptics.tap()
+                                withAnimation(Motion.smooth) { model.progress?.live = true }
+                            } else {
+                                withAnimation(Motion.smooth) { denied = true }
+                            }
+                        }
+                    } label: {
+                        Label("Im Gespräch", systemImage: "waveform")
+                    }
+                    .buttonStyle(PressStyle())
+                    Button("Lieber antippen und tippen") {
+                        withAnimation(Motion.smooth) { model.progress?.voice = false }
+                    }
+                    .buttonStyle(PressStyle(filled: false))
+                    QuietButton("Zurück") { withAnimation(Motion.smooth) { model.progress = nil } }
                 }
-                .buttonStyle(PressStyle(filled: false))
-                Button("Zurück") { withAnimation { model.progress = nil } }
-                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                    .foregroundStyle(Ink.muted)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                .appear(1)
             }
-            .padding(28)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.m)
         }
     }
 }
@@ -260,24 +377,24 @@ struct InterviewView: View {
     var body: some View {
         Screen {
             VStack(alignment: .leading, spacing: 0) {
-                header
+                header.appear(0)
                 if drafting {
                     Spacer()
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Ich schreibe deinen Zielvertrag.").font(.display(28))
-                        Text("Aus unserem Gespräch entstehen deine Vision, dein Warum und deine Ziele – von drei Jahren bis zu diesem Monat. Das dauert etwa eine halbe Minute.")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundStyle(Ink.muted)
+                    VStack(alignment: .leading, spacing: Space.page) {
+                        WritingNote()
                         CoachThinking(text: "Der Coach formuliert")
                     }
+                    .transition(.opacity)
                     Spacer()
                 } else if let question {
                     ScrollView {
-                        VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: Space.m) {
                             if !question.mirror.isEmpty {
                                 Text(question.mirror).font(.quote).foregroundStyle(Ink.muted)
                             }
-                            Text(question.question).font(.display(26))
+                            Text(question.question)
+                                .font(.display(26))
+                                .fixedSize(horizontal: false, vertical: true)
                             if question.input == "text" || ownAnswer, let hint = question.hint, !hint.isEmpty {
                                 Text(hint)
                                     .font(.system(.subheadline, design: .rounded))
@@ -285,30 +402,40 @@ struct InterviewView: View {
                             }
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 28)
+                        .padding(.top, Space.section)
+                        .padding(.bottom, Space.m)
                         .id(question.question)
-                        .transition(.opacity.combined(with: .move(edge: .bottom)))
+                        .transition(.asymmetric(insertion: .opacity.combined(with: .offset(y: 16)), removal: .opacity))
                     }
                     .scrollDismissesKeyboard(.interactively)
-                    if voiceOn {
-                        voiceControls(for: question)
-                    } else {
-                        input(for: question)
+                    Group {
+                        if voiceOn {
+                            voiceControls(for: question)
+                        } else {
+                            input(for: question)
+                        }
                     }
+                    .padding(.top, Space.xs)
                 } else {
                     Spacer()
                     CoachThinking()
                     Spacer()
                 }
                 if let error {
-                    ErrorNote(text: error).padding(.top, 10)
-                    Button("Noch einmal versuchen") { Task { await next() } }
-                        .buttonStyle(PressStyle(filled: false))
-                        .padding(.top, 10)
+                    VStack(spacing: Space.s) {
+                        ErrorNote(text: error)
+                        Button("Noch einmal versuchen") { Task { await next() } }
+                            .buttonStyle(PressStyle(filled: false))
+                    }
+                    .padding(.top, Space.s)
+                    .transition(.opacity)
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.m)
+            .animation(Motion.smooth, value: busy)
+            .animation(Motion.smooth, value: ownAnswer)
+            .animation(Motion.smooth, value: error)
         }
         .task { if question == nil { await next() } }
         .onDisappear {
@@ -326,7 +453,7 @@ struct InterviewView: View {
             Button("Von vorn beginnen", role: .destructive) {
                 round?.cancel()
                 voice.stop()
-                withAnimation { model.progress = nil }
+                withAnimation(Motion.smooth) { model.progress = nil }
             }
             Button("Weitermachen", role: .cancel) {}
         }
@@ -360,26 +487,29 @@ struct InterviewView: View {
 
     @ViewBuilder
     private func voiceControls(for question: Question) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.s) {
             if busy {
                 CoachThinking().frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
             } else {
-                HStack(spacing: 10) {
+                HStack(spacing: Space.xs) {
                     Image(systemName: voice.state == .listening ? "mic.fill" : voice.state == .speaking ? "speaker.wave.2.fill" : "mic.slash")
                         .font(.title3)
                         .foregroundStyle(voice.state == .idle ? Ink.muted : Ink.dawn)
                         .symbolEffect(.pulse, isActive: voice.state == .listening)
-                    Text(voice.state == .listening ? "Ich höre zu …" : voice.state == .speaking ? "Der Coach spricht" : heardNothing ? "Ich habe nichts gehört." : "Bereit")
+                        .contentTransition(.symbolEffect(.replace))
+                    Text(voice.state == .listening ? "Ich höre zu …" : voice.state == .speaking ? "Clara spricht" : heardNothing ? "Ich habe nichts gehört." : "Bereit")
                         .font(.system(.subheadline, design: .rounded).weight(.semibold))
                         .foregroundStyle(Ink.muted)
                 }
                 .accessibilityElement(children: .combine)
+                .animation(Motion.smooth, value: voice.state)
                 if !voice.transcript.isEmpty, voice.state == .listening {
                     Text(voice.transcript)
-                        .font(.system(.body, design: .rounded))
+                        .font(.bodyText)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
-                        .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .padding(Space.m)
+                        .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                        .transition(.opacity)
                 }
                 if voice.state == .listening {
                     Button("Fertig, weiter") { voice.finishListening() }.buttonStyle(PressStyle())
@@ -397,7 +527,7 @@ struct InterviewView: View {
                     Button("Lieber tippen") {
                         round?.cancel()
                         voice.stop()
-                        withAnimation { model.progress?.voice = false }
+                        withAnimation(Motion.smooth) { model.progress?.voice = false }
                     }
                 }
                 .font(.system(.subheadline, design: .rounded).weight(.semibold))
@@ -409,7 +539,7 @@ struct InterviewView: View {
 
     private var header: some View {
         let current = phases.firstIndex(of: question?.phase ?? "situation") ?? 0
-        return VStack(alignment: .trailing, spacing: 4) {
+        return VStack(alignment: .trailing, spacing: Space.xxs) {
             HStack {
                 if !voiceOn, !drafting {
                     Button {
@@ -422,7 +552,7 @@ struct InterviewView: View {
                             round?.cancel()
                             voice.stop()
                             // The realtime coach continues from the turns so far.
-                            withAnimation { model.progress?.live = true }
+                            withAnimation(Motion.smooth) { model.progress?.live = true }
                         }
                     } label: {
                         Label("Im Gespräch weiter", systemImage: "waveform")
@@ -439,9 +569,9 @@ struct InterviewView: View {
     }
 
     private func phaseBar(_ current: Int) -> some View {
-        HStack(spacing: 6) {
+        HStack(spacing: Space.xs) {
             ForEach(Array(phaseNames.enumerated()), id: \.offset) { index, name in
-                VStack(alignment: .leading, spacing: 6) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     Capsule().fill(index <= current ? Ink.dawn : Ink.line).frame(height: 4)
                     Text(name)
                         .font(.label)
@@ -449,7 +579,7 @@ struct InterviewView: View {
                 }
             }
         }
-        .animation(.easeInOut, value: current)
+        .animation(Motion.smooth, value: current)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("Abschnitt \(phaseNames[current]), \(current + 1) von \(phaseNames.count)")
     }
@@ -459,15 +589,11 @@ struct InterviewView: View {
         if busy {
             CoachThinking().frame(maxWidth: .infinity, minHeight: 54, alignment: .leading)
         } else if question.input == "scale" {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 HStack(spacing: 6) {
                     ForEach(1...10, id: \.self) { value in
                         Button("\(value)") { submit("\(value)") }
-                            .font(.system(.headline, design: .rounded))
-                            .frame(maxWidth: .infinity, minHeight: 48)
-                            .background(Ink.surface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Ink.line))
-                            .foregroundStyle(Ink.paper)
+                            .buttonStyle(ScalePress())
                     }
                 }
                 HStack {
@@ -479,46 +605,41 @@ struct InterviewView: View {
                 .foregroundStyle(Ink.muted)
             }
         } else if question.input == "choice", !question.options.isEmpty, !ownAnswer {
-            VStack(spacing: 8) {
+            VStack(spacing: Space.xs) {
                 ForEach(question.options, id: \.self) { option in
                     Button(option) { submit(option) }
                         .buttonStyle(PressStyle(filled: false))
                         .accessibilityIdentifier("choice-\(question.options.firstIndex(of: option) ?? 0)")
                 }
-                Button("Etwas anderes …") { withAnimation { ownAnswer = true } }
-                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                    .foregroundStyle(Ink.muted)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                QuietButton("Etwas anderes …") { withAnimation(Motion.smooth) { ownAnswer = true } }
             }
         } else {
             if ownAnswer {
-                Button("Zurück zur Auswahl") {
+                QuietButton("Zurück zur Auswahl") {
                     answer = ""
                     focused = false
-                    withAnimation { ownAnswer = false }
+                    withAnimation(Motion.smooth) { ownAnswer = false }
                 }
-                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundStyle(Ink.muted)
-                .frame(maxWidth: .infinity, minHeight: 44)
             }
-            HStack(alignment: .bottom, spacing: 10) {
+            HStack(alignment: .bottom, spacing: Space.xs) {
                 TextField("Deine Antwort", text: $answer, axis: .vertical)
                     .lineLimit(1...6)
                     .focused($focused)
                     .accessibilityIdentifier("answer-field")
-                    .font(.system(.body, design: .rounded))
-                    .padding(14)
-                    .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.line))
+                    .font(.bodyText)
+                    .modifier(FieldBackground(focused: focused))
                 Button {
                     submit(answer)
                 } label: {
                     Image(systemName: "arrow.up")
                         .font(.headline.weight(.bold))
                         .foregroundStyle(Ink.night)
-                        .frame(width: 50, height: 50)
+                        .frame(width: 52, height: 52)
                         .background(Ink.dawn, in: Circle())
+                        .opacity(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1)
+                        .animation(Motion.snappy, value: answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
+                .buttonStyle(AreaPress())
                 .disabled(answer.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 .accessibilityLabel("Antwort senden")
             }
@@ -553,19 +674,34 @@ struct InterviewView: View {
                 focused = false
                 round?.cancel()
                 voice.stop()
-                withAnimation { drafting = true }
+                withAnimation(Motion.smooth) { drafting = true }
                 let draft = try await model.api.draft(area: progress.area, turns: progress.turns, feedback: nil)
                 guard model.progress?.run == progress.run else { return }
                 Haptics.success()
-                withAnimation { model.progress?.draft = draft }
+                withAnimation(Motion.smooth) { model.progress?.draft = draft }
             } else {
-                withAnimation(.easeOut(duration: 0.3)) { question = q }
+                withAnimation(Motion.smooth) { question = q }
                 if voiceOn { converse(q) }
             }
         } catch {
             drafting = false
             self.error = error.localizedDescription
         }
+    }
+}
+
+/// One step of the 1-10 scale: a compact surface key that sinks while pressed.
+private struct ScalePress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(.headline, design: .rounded))
+            .monospacedDigit()
+            .foregroundStyle(configuration.isPressed ? Ink.night : Ink.paper)
+            .frame(maxWidth: .infinity, minHeight: 48)
+            .background(configuration.isPressed ? Ink.dawn : Ink.surface, in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).strokeBorder(Ink.line))
+            .scaleEffect(configuration.isPressed ? 0.94 : 1)
+            .animation(Motion.snappy, value: configuration.isPressed)
     }
 }
 
@@ -604,11 +740,8 @@ struct LiveInterviewView: View {
                 .frame(minHeight: 44)
                 if writing {
                     Spacer()
-                    VStack(alignment: .leading, spacing: 14) {
-                        Text("Ich schreibe deinen Zielvertrag.").font(.display(28))
-                        Text("Aus unserem Gespräch entstehen deine Vision, dein Warum und deine Ziele – von drei Jahren bis zu diesem Monat. Das dauert etwa eine halbe Minute.")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundStyle(Ink.muted)
+                    VStack(alignment: .leading, spacing: Space.page) {
+                        WritingNote()
                         if let error {
                             ErrorNote(text: error)
                             Button("Noch einmal versuchen") { Task { await writeDraft() } }
@@ -617,13 +750,15 @@ struct LiveInterviewView: View {
                             CoachThinking(text: "Der Coach formuliert")
                         }
                     }
+                    .transition(.opacity)
                     Spacer()
                 } else {
                     conversation
                 }
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 16)
+            .padding(.horizontal, Space.page)
+            .padding(.vertical, Space.m)
+            .animation(Motion.smooth, value: failure)
         }
         .task { await start() }
         .onDisappear { live.stop() }
@@ -639,7 +774,7 @@ struct LiveInterviewView: View {
         .confirmationDialog("Das Gespräch beginnt von vorn. Deine bisherigen Antworten gehen verloren.", isPresented: $confirmRestart, titleVisibility: .visible) {
             Button("Von vorn beginnen", role: .destructive) {
                 live.stop()
-                withAnimation { model.progress = nil }
+                withAnimation(Motion.smooth) { model.progress = nil }
             }
             Button("Weitermachen", role: .cancel) {}
         }
@@ -648,7 +783,7 @@ struct LiveInterviewView: View {
     @ViewBuilder
     private var conversation: some View {
         LiveCaptions(live: live)
-        VStack(spacing: 10) {
+        VStack(spacing: Space.s) {
             if let failure {
                 ErrorNote(text: failure)
                 Button("Noch einmal verbinden") {
@@ -671,11 +806,9 @@ struct LiveInterviewView: View {
                     .buttonStyle(PressStyle())
                     .disabled(turnCount < minTurns)
             }
-            Button("Lieber tippen") { leave(voice: false) }
-                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                .foregroundStyle(Ink.muted)
-                .frame(maxWidth: .infinity, minHeight: 44)
+            QuietButton("Lieber tippen") { leave(voice: false) }
         }
+        .padding(.top, Space.xs)
     }
 
     /// Asks the worker for a session and connects; the coach continues from the turns so far.
@@ -704,7 +837,7 @@ struct LiveInterviewView: View {
     private func leave(voice: Bool) {
         bank()
         guard let progress = model.progress else { return }
-        withAnimation {
+        withAnimation(Motion.smooth) {
             model.progress?.turns = Array(progress.turns.suffix(typedTurns))
             model.progress?.voice = voice
             model.progress?.live = false
@@ -724,7 +857,7 @@ struct LiveInterviewView: View {
             error = "Das Gespräch war zu kurz für einen Zielvertrag. Verbinde dich noch einmal und erzähl dem Coach mehr."
             return
         }
-        withAnimation { writing = true }
+        withAnimation(Motion.smooth) { writing = true }
         Task { await writeDraft() }
     }
 
@@ -735,7 +868,7 @@ struct LiveInterviewView: View {
             let draft = try await model.api.draft(area: progress.area, turns: progress.turns, feedback: nil)
             guard model.progress?.run == progress.run else { return } // the interview was restarted meanwhile
             Haptics.success()
-            withAnimation { model.progress?.draft = draft }
+            withAnimation(Motion.smooth) { model.progress?.draft = draft }
         } catch {
             self.error = error.localizedDescription
         }
@@ -748,14 +881,14 @@ struct LiveCaptions: View {
 
     private var status: String {
         switch live.state {
-        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Der Coach spricht" : "Der Coach hört zu"
+        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Clara spricht" : "Clara hört zu"
         case .finished: return "Gespräch beendet"
         default: return "Verbinde …"
         }
     }
 
     var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: Space.xs) {
             Image(systemName: "waveform")
                 .font(.title3)
                 .foregroundStyle(live.state == .live ? Ink.dawn : Ink.muted)
@@ -765,25 +898,30 @@ struct LiveCaptions: View {
                 Text(status)
                     .font(.system(.subheadline, design: .rounded).weight(.semibold))
                     .foregroundStyle(Ink.muted)
+                    .contentTransition(.opacity)
+                    .animation(Motion.smooth, value: status)
             }
         }
         .accessibilityElement(children: .combine)
-        .padding(.top, 20)
+        .padding(.top, Space.page)
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: Space.m) {
                 Text(live.agentText.isEmpty ? "Dein Coach begrüßt dich. Dreh den Ton auf." : live.agentText)
                     .font(.display(28))
+                    .fixedSize(horizontal: false, vertical: true)
                     .id(live.agentText)
                     .transition(.opacity)
                 if !live.callerText.isEmpty {
                     Text(live.callerText)
-                        .font(.system(.body, design: .rounded))
+                        .font(.bodyText)
                         .foregroundStyle(Ink.muted)
+                        .transition(.opacity)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.top, 24)
-            .animation(.easeOut(duration: 0.3), value: live.agentText)
+            .padding(.top, Space.section)
+            .animation(Motion.smooth, value: live.agentText)
         }
+        .scrollIndicators(.hidden)
     }
 }

@@ -15,30 +15,20 @@ struct ContractView: View {
         Screen {
             if let progress = model.progress, let draft = progress.draft {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    Page {
                         ContractBody(draft: draft)
-                        if busy {
-                            CoachThinking(text: "Der Coach überarbeitet").padding(.vertical, 8)
-                        } else {
-                            if let error { ErrorNote(text: error) }
-                            Text("Mit deiner Unterschrift sind diese Ziele 30 Tage fest. Ändern geht danach nur mit Begründung und 48 Stunden Bedenkzeit.")
-                                .font(.system(.footnote, design: .rounded))
-                                .foregroundStyle(Ink.muted)
-                            HoldToSign { Task { await sign(progress.area, draft) } }
-                            Button("Passt noch nicht ganz") { showTalk = true }
-                                .buttonStyle(PressStyle(filled: false))
-                            Button("Erstgespräch neu beginnen") { confirmRestart = true }
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                .foregroundStyle(Ink.muted)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
+                            .id(draft.vision) // a revised draft enters like a fresh page
+                            .transition(.opacity)
+                        signing(progress.area, draft).appear(5)
                     }
-                    .padding(24)
+                    .animation(Motion.smooth, value: busy)
+                    .animation(Motion.smooth, value: draft.vision)
                 }
+                .scrollIndicators(.hidden)
             }
         }
         .confirmationDialog("Der Entwurf und deine Antworten werden verworfen.", isPresented: $confirmRestart, titleVisibility: .visible) {
-            Button("Neu beginnen", role: .destructive) { withAnimation { model.progress = nil } }
+            Button("Neu beginnen", role: .destructive) { withAnimation(Motion.smooth) { model.progress = nil } }
             Button("Abbrechen", role: .cancel) {}
         }
         .fullScreenCover(isPresented: $showTalk) {
@@ -58,12 +48,14 @@ struct ContractView: View {
         }
         .sheet(isPresented: $showFeedback) {
             Screen {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("Was stimmt noch nicht?").font(.display(24))
+                VStack(alignment: .leading, spacing: Space.m) {
+                    Text("Was stimmt noch nicht?").font(.sectionTitle)
                     TextField("Zum Beispiel: Das Jahresziel ist zu groß.", text: $feedback, axis: .vertical)
                         .lineLimit(3...6)
-                        .padding(14)
-                        .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        .font(.bodyText)
+                        .padding(Space.m)
+                        .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                        .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Ink.line))
                     Button("Überarbeiten lassen") {
                         showFeedback = false
                         let said = feedback
@@ -74,9 +66,49 @@ struct ContractView: View {
                     .disabled(feedback.trimmingCharacters(in: .whitespacesAndNewlines).count < 5)
                     Spacer()
                 }
-                .padding(24)
+                .padding(.horizontal, Space.page)
+                .padding(.top, Space.section)
             }
             .presentationDetents([.medium])
+            .presentationCornerRadius(Radius.card + 6)
+        }
+    }
+
+    /// Signature block: the commitment note, the hold gesture and the quieter ways out.
+    @ViewBuilder
+    private func signing(_ area: String, _ draft: Draft) -> some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            if busy {
+                CoachThinking(text: "Der Coach überarbeitet")
+                    .frame(maxWidth: .infinity, minHeight: 58, alignment: .leading)
+                    .transition(.opacity)
+            } else {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Eyebrow("Unterschrift")
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(model.name ?? "")
+                            .font(.quote)
+                        Spacer()
+                        Text(Date.now.formatted(.dateTime.day().month(.abbreviated).year().locale(Locale(identifier: "de_DE"))))
+                            .font(.label)
+                            .foregroundStyle(Ink.muted)
+                    }
+                    Rectangle().fill(Ink.line).frame(height: 1)
+                    Text("Mit deiner Unterschrift sind diese Ziele 30 Tage fest. Ändern geht danach nur mit Begründung und 48 Stunden Bedenkzeit.")
+                        .font(.note)
+                        .foregroundStyle(Ink.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.bottom, Space.xs)
+                if let error { ErrorNote(text: error).transition(.opacity) }
+                HoldToSign { Task { await sign(area, draft) } }
+                Button("Passt noch nicht ganz") { showTalk = true }
+                    .buttonStyle(PressStyle(filled: false))
+                Button("Erstgespräch neu beginnen") { confirmRestart = true }
+                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                    .foregroundStyle(Ink.muted)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
         }
     }
 
@@ -90,7 +122,7 @@ struct ContractView: View {
             let draft = try await model.api.draft(area: progress.area, turns: progress.turns, feedback: String(said.prefix(7500)), previous: previous)
             guard model.progress?.run == progress.run else { return }
             Haptics.success()
-            withAnimation { model.progress?.draft = draft }
+            withAnimation(Motion.smooth) { model.progress?.draft = draft }
         } catch {
             self.error = error.localizedDescription
         }
@@ -115,16 +147,35 @@ struct ContractBody: View {
     let draft: Draft
 
     var body: some View {
-        Eyebrow("Dein Zielvertrag")
-        Text(draft.vision).font(.display(24)).lineSpacing(3)
-        ValueChips(values: draft.values)
-        Card {
-            Eyebrow("Dein Warum")
-            Text(draft.why).font(.quote)
+        VStack(alignment: .leading, spacing: Space.section) {
+            VStack(alignment: .leading, spacing: Space.s) {
+                Eyebrow("Dein Zielvertrag")
+                Text(draft.vision)
+                    .font(.display(26))
+                    .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                ValueChips(values: draft.values).padding(.top, Space.xxs)
+            }
+            .appear(0)
+            VStack(alignment: .leading, spacing: Space.xs) {
+                Eyebrow("Dein Warum")
+                HStack(alignment: .top, spacing: Space.m) {
+                    Capsule().fill(Ink.dawn.opacity(0.6)).frame(width: 2)
+                    Text(draft.why)
+                        .font(.quote)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .appear(1)
+            VStack(alignment: .leading, spacing: Space.s) {
+                Text("Deine Ziele").font(.sectionTitle)
+                ForEach(Array(draft.goals.enumerated()), id: \.element.horizon) { index, goal in
+                    GoalCard(goal: goal, expanded: goal.horizon == "month").appear(index + 2)
+                }
+            }
         }
-        ForEach(draft.goals, id: \.horizon) { goal in
-            GoalCard(goal: goal, expanded: goal.horizon == "month")
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -153,7 +204,7 @@ struct ReviseTalkView: View {
 
     private var status: String {
         switch live.state {
-        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Der Coach spricht" : "Der Coach hört zu"
+        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Clara spricht" : "Clara hört zu"
         case .finished: return "Gespräch beendet"
         default: return "Verbinde …"
         }
@@ -163,13 +214,17 @@ struct ReviseTalkView: View {
         Screen {
             VStack(alignment: .leading, spacing: 0) {
                 // The conversation: a compact strip at the top.
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    HStack(spacing: Space.xs) {
                         Image(systemName: "waveform")
                             .foregroundStyle(live.state == .live ? Ink.dawn : Ink.muted)
                             .symbolEffect(.variableColor.iterative, isActive: live.state == .live)
                         TimelineView(.periodic(from: .now, by: 0.5)) { _ in
-                            Text(status).font(.system(.subheadline, design: .rounded).weight(.semibold)).foregroundStyle(Ink.muted)
+                            Text(status)
+                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                                .foregroundStyle(Ink.muted)
+                                .contentTransition(.opacity)
+                                .animation(Motion.smooth, value: status)
                         }
                         Spacer()
                         Button("Abbrechen") { close(.none) }
@@ -180,7 +235,9 @@ struct ReviseTalkView: View {
                     .accessibilityElement(children: .contain)
                     if crisis {
                         Text("Dein Coach hat das Gespräch beendet. Die Telefonseelsorge erreichst du kostenlos und rund um die Uhr unter 0800 111 0 111, im Notfall die 112.")
-                            .font(.system(.body, design: .rounded))
+                            .font(.bodyText)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .transition(.opacity)
                     } else {
                         Text(live.agentText.isEmpty ? "Sag deinem Coach, was noch nicht passt. Der Vertrag bleibt unten sichtbar." : live.agentText)
                             .font(.display(20))
@@ -190,9 +247,10 @@ struct ReviseTalkView: View {
                             .transition(.opacity)
                         if !live.callerText.isEmpty {
                             Text(live.callerText)
-                                .font(.system(.footnote, design: .rounded))
+                                .font(.note)
                                 .foregroundStyle(Ink.muted)
                                 .lineLimit(2)
+                                .transition(.opacity)
                         }
                     }
                     if let failure {
@@ -204,17 +262,20 @@ struct ReviseTalkView: View {
                         .buttonStyle(PressStyle(filled: false))
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.bottom, 14)
-                .animation(.easeOut(duration: 0.3), value: live.agentText)
-                Divider().overlay(Ink.line)
+                .padding(.horizontal, Space.page)
+                .padding(.bottom, Space.m)
+                .animation(Motion.smooth, value: live.agentText)
+                .animation(Motion.smooth, value: failure)
+                Rectangle().fill(Ink.line).frame(height: 1)
                 // The contract being talked about.
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) { ContractBody(draft: draft) }
-                        .padding(24)
+                    ContractBody(draft: draft)
+                        .padding(.horizontal, Space.page)
+                        .padding(.vertical, Space.section)
                 }
-                Divider().overlay(Ink.line)
-                VStack(spacing: 8) {
+                .scrollIndicators(.hidden)
+                Rectangle().fill(Ink.line).frame(height: 1)
+                VStack(spacing: Space.xs) {
                     Button("Fertig, Vertrag anpassen") { finish() }
                         .buttonStyle(PressStyle())
                         .disabled(turns.isEmpty && LiveVoice.pair(live.entries).isEmpty)
@@ -223,10 +284,10 @@ struct ReviseTalkView: View {
                         .foregroundStyle(Ink.muted)
                         .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .padding(.horizontal, 24)
-                .padding(.top, 12)
+                .padding(.horizontal, Space.page)
+                .padding(.top, Space.s)
             }
-            .padding(.vertical, 12)
+            .padding(.vertical, Space.s)
         }
         .task { await start() }
         .onDisappear { live.stop() }
@@ -266,7 +327,7 @@ struct ReviseTalkView: View {
         let crisisLine = live.entries.suffix(4).contains { $0.speaker == "agent" && $0.text.localizedCaseInsensitiveContains("Telefonseelsorge") }
         bank()
         if crisisLine {
-            withAnimation { crisis = true }
+            withAnimation(Motion.smooth) { crisis = true }
             return
         }
         guard !turns.isEmpty else { return close(.none) }
@@ -285,17 +346,18 @@ struct ValueChips: View {
     let values: [String]
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 8) {
+            HStack(spacing: Space.xs) {
                 ForEach(values, id: \.self) { value in
                     Text(value)
                         .font(.label)
-                        .padding(.horizontal, 12)
+                        .padding(.horizontal, Space.s)
                         .padding(.vertical, 7)
-                        .background(Ink.dawn.opacity(0.16), in: Capsule())
+                        .overlay(Capsule().strokeBorder(Ink.dawn.opacity(0.45)))
                         .foregroundStyle(Ink.dawn)
                 }
             }
         }
+        .scrollClipDisabled()
     }
 }
 
@@ -306,9 +368,9 @@ struct GoalCard: View {
     var body: some View {
         Card {
             Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { expanded.toggle() }
+                withAnimation(Motion.snappy) { expanded.toggle() }
             } label: {
-                VStack(alignment: .leading, spacing: 8) {
+                VStack(alignment: .leading, spacing: Space.xs) {
                     HStack {
                         Eyebrow(goal.horizonLabel)
                         Spacer()
@@ -316,17 +378,25 @@ struct GoalCard: View {
                             Image(systemName: "lock.fill").font(.caption).foregroundStyle(Ink.muted)
                         }
                         Text("bis \(germanDate(goal.deadline))").font(.label).foregroundStyle(Ink.muted)
+                        Image(systemName: "chevron.down")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(Ink.muted)
+                            .rotationEffect(.degrees(expanded ? 180 : 0))
+                            .accessibilityHidden(true)
                     }
                     Text(goal.title)
                         .font(.system(.body, design: .serif).weight(.medium))
                         .multilineTextAlignment(.leading)
+                        .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityHint(expanded ? "Details einklappen" : "Details anzeigen")
             if expanded {
-                VStack(alignment: .leading, spacing: 10) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    Rectangle().fill(Ink.line).frame(height: 1)
                     detail("Konkret", goal.specific)
                     detail("Messbar", goal.measurable)
                     detail("Machbar", goal.achievable)
@@ -338,9 +408,11 @@ struct GoalCard: View {
     }
 
     private func detail(_ title: String, _ text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(title).font(.label).foregroundStyle(Ink.muted)
-            Text(text).font(.system(.subheadline, design: .rounded))
+            Text(text)
+                .font(.system(.subheadline, design: .rounded))
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -350,35 +422,46 @@ struct HoldToSign: View {
     var action: () -> Void
     @State private var progress: CGFloat = 0
     @State private var holding = false
+    /** The hold completed: the bar stays full and shows a check. */
+    @State private var signed = false
     private let duration = 1.5
+    private var shape: RoundedRectangle { RoundedRectangle(cornerRadius: Radius.control, style: .continuous) }
 
     var body: some View {
-        ZStack(alignment: .leading) {
-            RoundedRectangle(cornerRadius: 16, style: .continuous).fill(Ink.dawn.opacity(0.25))
-            GeometryReader { geo in
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Ink.dawn)
-                    .frame(width: geo.size.width * progress)
+        ZStack {
+            shape.fill(Ink.surface)
+            // Paper label on the empty track, night label on the dawn fill; the fill reveals one over the other.
+            label.foregroundStyle(Ink.paper)
+            ZStack {
+                shape.fill(Ink.dawn)
+                label.foregroundStyle(Ink.night)
             }
-            Label(holding ? "Weiter halten …" : "Halten, um zu unterschreiben", systemImage: "signature")
-                .font(.system(.headline, design: .rounded))
-                .foregroundStyle(Ink.night)
-                .frame(maxWidth: .infinity)
+            .mask(alignment: .leading) {
+                GeometryReader { geo in
+                    Rectangle().frame(width: geo.size.width * progress)
+                }
+            }
         }
         .frame(height: 58)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .scaleEffect(holding ? 0.98 : 1)
+        .clipShape(shape)
+        .overlay(shape.strokeBorder(Ink.dawn.opacity(signed ? 0 : 0.5)))
+        .scaleEffect(signed ? 1 : holding ? 0.98 : 1)
+        .animation(Motion.snappy, value: holding)
+        .animation(Motion.snappy, value: signed)
+        .sensoryFeedback(.impact(weight: .medium), trigger: signed) { _, now in now }
         .onLongPressGesture(minimumDuration: duration, maximumDistance: 60) {
             holding = false
-            progress = 1
+            withAnimation(Motion.snappy) { progress = 1 }
+            signed = true
             action()
         } onPressingChanged: { pressing in
             holding = pressing
             if pressing {
+                signed = false
                 Haptics.tap()
                 withAnimation(.linear(duration: duration)) { progress = 1 }
-            } else if progress < 1 || !pressing {
-                withAnimation(.easeOut(duration: 0.2)) { progress = 0 }
+            } else if !signed {
+                withAnimation(Motion.smooth) { progress = 0 }
             }
         }
         .accessibilityElement(children: .ignore)
@@ -386,5 +469,13 @@ struct HoldToSign: View {
         .accessibilityHint("Doppeltippen und halten")
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { action() }
+    }
+
+    private var label: some View {
+        Label(signed ? "Unterschrieben" : holding ? "Weiter halten …" : "Halten, um zu unterschreiben",
+              systemImage: signed ? "checkmark" : "signature")
+            .font(.system(.headline, design: .rounded))
+            .contentTransition(.opacity)
+            .frame(maxWidth: .infinity)
     }
 }

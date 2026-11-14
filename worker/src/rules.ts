@@ -114,16 +114,17 @@ export function kpiMet(kpi: Kpi, value: number): boolean {
 }
 
 /** One entry of the day's list. `quadrant`: now = important and urgent, next = important not urgent, later = urgent not important. */
-export type ListItem = { id: string; title: string; why: string; quadrant: "now" | "next" | "later"; source: "coach" | "habit" | "own"; kpiId?: string; done: boolean };
+export type ListItem = { id: string; title: string; why: string; quadrant: "now" | "next" | "later"; source: "coach" | "habit" | "own"; kpiId?: string; done: boolean; points?: number };
 
 /** Steps forward weigh most, urgent small stuff least. */
 export const QUADRANT_WEIGHT = { now: 3, next: 4, later: 1 } as const;
 
 /** Day score from the day's list: the weighted share of done items, 0-100. */
 export function listScore(items: ListItem[]): number {
-  const total = items.reduce((sum, i) => sum + QUADRANT_WEIGHT[i.quadrant], 0);
+  const weight = (i: ListItem) => i.points ?? QUADRANT_WEIGHT[i.quadrant];
+  const total = items.reduce((sum, i) => sum + weight(i), 0);
   if (!total) return 0;
-  return Math.round((items.filter((i) => i.done).reduce((sum, i) => sum + QUADRANT_WEIGHT[i.quadrant], 0) / total) * 100);
+  return Math.round((items.filter((i) => i.done).reduce((sum, i) => sum + weight(i), 0) / total) * 100);
 }
 
 /** A day counts as good (for the streak) from this score on. */

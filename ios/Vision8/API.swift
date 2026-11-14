@@ -180,6 +180,9 @@ struct ListItem: Codable, Equatable, Identifiable {
     var quadrant: String
     var source: String
     var done: Bool
+    /** For area to-dos: the to-do it ranks, and its score points for today (set by the coach). */
+    var kpiId: String?
+    var points: Int?
 }
 
 /** Days in a row the person answered the coach; `today`: already counted today. */
@@ -362,12 +365,16 @@ struct API {
         return result.kpis
     }
 
-    private struct AddKpiBody: Encodable { var area: String; var name: String }
+    private struct AddKpiBody: Encodable { var area: String?; var name: String }
+    private struct AddedKpi: Decodable { var area: String }
     private struct AreaBody: Encodable { var area: String }
     private struct IdOnly: Encodable { var id: String }
 
-    func addKpi(area: String, name: String) async throws {
-        let _: KpiSet = try await send("POST", "v1/kpis/add", AddKpiBody(area: area, name: name))
+    /// Without an area, the coach files the to-do; returns the area it landed in.
+    @discardableResult
+    func addKpi(area: String?, name: String) async throws -> String {
+        let added: AddedKpi = try await send("POST", "v1/kpis/add", AddKpiBody(area: area, name: name))
+        return added.area
     }
 
     func suggestKpis(area: String) async throws {

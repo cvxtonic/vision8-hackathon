@@ -1,31 +1,39 @@
 import SwiftUI
 
-/// Row on the Coach tab that opens the file.
+/// Row that opens the coach's file.
 struct FileRow: View {
     @Environment(AppModel.self) private var model
     @State private var open = false
 
     var body: some View {
         Button { open = true } label: {
-            Card {
-                HStack {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("Deine Akte").font(.system(.headline, design: .rounded))
-                        Text(model.state?.fileUpdatedAt.map { "Zuletzt ergänzt am \(germanDate($0))" } ?? "Was dein Coach über dich weiß")
-                            .font(.system(.footnote, design: .rounded))
-                            .foregroundStyle(Ink.muted)
-                    }
-                    Spacer()
-                    Image(systemName: "chevron.right").foregroundStyle(Ink.muted)
+            HStack(spacing: Space.s) {
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Deine Akte").font(.cardTitle)
+                    Text(model.state?.fileUpdatedAt.map { "Zuletzt ergänzt am \(germanDate($0))" } ?? "Was dein Coach über dich weiß")
+                        .font(.note)
+                        .foregroundStyle(Ink.muted)
+                        .contentTransition(.opacity)
                 }
+                Spacer(minLength: Space.s)
+                Image(systemName: "chevron.right")
+                    .font(.note.weight(.semibold))
+                    .foregroundStyle(Ink.muted)
             }
+            .padding(Space.m)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(RowPress())
+        .background(Ink.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Ink.line))
+        .animation(Motion.smooth, value: model.state?.fileUpdatedAt)
         .sheet(isPresented: $open) { FileView() }
     }
 }
 
-/// The coach's file on the person, section by section.
+/// The coach's file on the person, section by section, typeset like a quiet document.
 struct FileView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.dismiss) private var dismiss
@@ -49,46 +57,84 @@ struct FileView: View {
     }
 
     var body: some View {
+        let sections = model.state?.file.map(Self.sections) ?? []
         Screen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    HStack {
-                        Spacer()
-                        Button("Schließen") { dismiss() }
-                    }
-                    .font(.label)
-                    .foregroundStyle(Ink.muted)
-                    .frame(minHeight: 44)
-                    Eyebrow("Deine Akte")
-                    Text("Was dein Coach über dich weiß").font(.display(28))
-                    if let file = model.state?.file, !Self.sections(file).isEmpty {
-                        if let at = model.state?.fileUpdatedAt {
+                Page {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        HStack {
+                            Eyebrow("Deine Akte")
+                            Spacer()
+                            Button("Schließen") { dismiss() }
+                                .font(.label)
+                                .foregroundStyle(Ink.muted)
+                                .frame(minHeight: 44)
+                        }
+                        Text("Was dein Coach über dich weiß")
+                            .font(.pageTitle)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        if !sections.isEmpty, let at = model.state?.fileUpdatedAt {
                             Text("Zuletzt ergänzt am \(germanDate(at))")
-                                .font(.system(.footnote, design: .rounded))
+                                .font(.note)
                                 .foregroundStyle(Ink.muted)
                         }
-                        ForEach(Array(Self.sections(file).enumerated()), id: \.offset) { _, section in
-                            Card {
-                                if !section.title.isEmpty { Eyebrow(section.title) }
-                                ForEach(Array(section.lines.enumerated()), id: \.offset) { _, line in
-                                    Text(line)
-                                        .font(.system(.body, design: .rounded))
-                                        .fixedSize(horizontal: false, vertical: true)
-                                }
-                            }
-                        }
-                    } else {
-                        Text("Dein Coach legt deine Akte gerade an.")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundStyle(Ink.muted)
                     }
+                    .appear(0)
+
+                    if sections.isEmpty {
+                        CoachThinking(text: "Dein Coach legt deine Akte gerade an")
+                            .appear(1)
+                    } else {
+                        ForEach(Array(sections.enumerated()), id: \.offset) { index, section in
+                            FileSection(title: section.title, lines: section.lines)
+                                .appear(index + 1)
+                        }
+                    }
+
                     Text("Das ist, was dein Coach sich von euren Gesprächen merkt und beim nächsten Mal nutzt. „Alle meine Daten löschen“ entfernt auch deine Akte.")
-                        .font(.system(.footnote, design: .rounded))
+                        .font(.note)
                         .foregroundStyle(Ink.muted)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Space.m)
+                        .overlay(alignment: .top) { Rectangle().fill(Ink.line).frame(height: 0.5) }
+                        .appear(sections.count + 1)
                 }
-                .padding(24)
+                .animation(Motion.smooth, value: model.state?.file)
             }
         }
+    }
+}
+
+/// One chapter of the file: serif heading, then entries as hanging-indent paragraphs.
+private struct FileSection: View {
+    let title: String
+    let lines: [String]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            if !title.isEmpty {
+                Text(title)
+                    .font(.sectionTitle)
+                    .accessibilityAddTraits(.isHeader)
+            }
+            VStack(alignment: .leading, spacing: Space.s) {
+                ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s) {
+                        Circle()
+                            .fill(Ink.muted)
+                            .frame(width: 5, height: 5)
+                            .alignmentGuide(.firstTextBaseline) { $0[.bottom] + 2 }
+                            .accessibilityHidden(true)
+                        Text(line)
+                            .font(.bodyText)
+                            .lineSpacing(Space.xxs)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

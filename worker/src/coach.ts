@@ -92,9 +92,19 @@ export type PlanCheck = z.infer<typeof PlanCheckSchema>;
 
 export const ReplySchema = z.object({ reply: z.string().max(900) });
 
-const COACH = `Du bist der persönliche Coach in der App "Vision 8". Du sprichst Deutsch, duzt, bist warm, motivierend, direkt und konkret – wie ein guter Freund, der an die Person glaubt und sie nicht vom Haken lässt. Du hörst aktiv zu: Du greifst auf, was die Person gesagt hat, in ihren eigenen Worten, damit sie sich verstanden fühlt. Du würdigst ehrlich und konkret, dass sie an sich arbeitet. Kennst du ihren Vornamen, sprichst du sie gelegentlich damit an. Keine Floskeln, kein Therapeuten-Jargon, keine Emojis, keine Diagnosen. Du gibst keine medizinischen, rechtlichen oder Anlage-Ratschläge.
+const COACH = `Du bist Clara, der persönliche Coach in der App "Vision 8". Wenn du von dir sprichst, dann als Clara; du gibst dich nie als Mensch aus. Du sprichst Deutsch, duzt, bist warm, motivierend, direkt und konkret – wie ein guter Freund, der an die Person glaubt und sie nicht vom Haken lässt. Du hörst aktiv zu: Du greifst auf, was die Person gesagt hat, in ihren eigenen Worten, damit sie sich verstanden fühlt. Du würdigst ehrlich und konkret, dass sie an sich arbeitet. Kennst du ihren Vornamen, sprichst du sie gelegentlich damit an. Keine Floskeln, kein Therapeuten-Jargon, keine Emojis, keine Diagnosen. Du gibst keine medizinischen, rechtlichen oder Anlage-Ratschläge.
 Du bist Coach, kein Therapeut. Kommen schwere Erfahrungen zur Sprache (Gewalt, Missbrauch, Trauma, schwerer Verlust, etwas, worüber die Person nicht ruhig sprechen kann), würdigst du das, fragst nicht weiter nach und empfiehlst professionelle Hilfe. Wenn jemand von akuter Not oder Selbstgefährdung schreibt, verweist du ruhig auf die Telefonseelsorge 0800 111 0 111, bei akuter Gefahr auf den Notruf 112, und coachst nicht weiter.
 Antworte ausschließlich mit einem JSON-Objekt im verlangten Format.`;
+
+/** What belongs to which life area, so a to-do is filed where it pays in most directly. */
+export const AREA_RULES = `Bereiche, in die ein To-do gehört (genau einer, nämlich der, auf den es am direktesten einzahlt):
+- karriere: Arbeit, Beruf, Führung, Bewerbungen, berufliche Weiterbildung, eigenes Unternehmen.
+- finanzen: Geld – Einnahmen, Ausgaben, Sparen, Budget, Schulden, Vorsorge, Verträge.
+- gesundheit: Körper und Energie – Bewegung, Schlaf, Ernährung, Erholung, Arztbesuche.
+- beziehungen: andere Menschen – Partner, Kinder, Familie, Freundschaften, gemeinsame Zeit.
+- persoenlichkeit: die Person selbst – Lesen und Lernen ohne Jobbezug, Reflexion, Gewohnheiten, Glaubenssätze, Selbstbild.
+- privatleben: Freizeit, Hobbys, Wohnen, Haushalt.
+Ein Lauf ist Gesundheit, nicht Persönlichkeit; ein Fachbuch für den Job ist Karriere, ein Roman Persönlichkeit; Zeit mit dem Kind ist Beziehungen.`;
 
 export const AREA_LABEL: Record<string, string> = {
   karriere: "Karriere und Beruf",
@@ -161,6 +171,13 @@ export function draftPrompt(area: string, turns: Turn[], today: string, feedback
 - "why": 1–2 Sätze, das emotionale Warum – der Satz, den der Coach ihr später vorhält, wenn sie abweicht.
 - "values": 1–5 Werte als einzelne Wörter – nur solche, die die Person genannt oder ausgewählt hat.
 - "goals": genau 4 Ziele in der Reihenfolge horizon "10y", "3y", "1y", "month". Der Anker ist das Drei-Jahres-Ziel: Es ist das Bild, das die Person für "in drei Jahren" beschrieben hat. Das 10-Jahres-Ziel denkt dieses Bild vorsichtig weiter; 12 Monate und dieser Monat brechen es in Etappen herunter. Das Monatsziel ist ein kleiner, konkreter erster Schritt, den man sofort angehen kann. Jedes ist SMART: "title" (ein kurzer Satz in Ich-Form, ohne Datum – das steht in "deadline"), "specific" (was genau), "measurable" (Zahl oder klares Kriterium), "achievable" (warum realistisch für genau diese Ausgangslage – stütze dich auf das genannte Zeitbudget pro Woche und den bisherigen Stolperstein), "relevant" (Bezug zur Vision), "deadline" (YYYY-MM-DD, passend zum Horizont).
+- Jedes Ziel ist streng SMART, und zwar schon im "title":
+  - Spezifisch: genau ein Ergebnis, kein Sammelziel mit "und" über mehrere Lebensbereiche.
+  - Messbar: eine Zahl oder ein eindeutiges Ja/Nein-Kriterium steht im Titel ("6.000 € Rücklage", "10 km am Stück", "Zusage für das Programm").
+  - Attraktiv/erreichbar: realistisch für ihr Zeitbudget und ihre Ausgangslage; "achievable" sagt konkret, warum.
+  - Relevant: "relevant" nennt den Bezug zu ihrer Vision und ihrem Warum.
+  - Terminiert: der Titel beginnt mit "Bis <Datum>" im Format TT.MM.JJJJ, gleich dem "deadline".
+  - Keine Wörter wie "mehr", "besser", "regelmäßig", "verlässlich" ohne Zahl dahinter.
 - Erfinde keine Fakten. Wo die Person keine Zahl genannt hat, wähle eine vorsichtige, zur Ausgangslage passende.
 ${
   feedback && previous
@@ -220,7 +237,9 @@ const kpiFieldRules = `- Jedes To-do ist eine kleine, konkrete Handlung, die die
 export function kpiPrompt(draft: Draft, area: string, material: string, name: string | null, file: string | null, only?: string): string {
   if (only) {
     return `${named(name)}Aufgabe: Schlag ein bis zwei tägliche To-dos für den Lebensbereich ${AREA_LABEL[only] ?? only} vor. Die Person hat dafür noch keine. Sie sollen zu ihrem Zielvertrag und zu dem passen, was du über sie weißt, und klein genug sein, um sie jeden Tag zu schaffen. Setze "area" auf "${only}". Regeln für die Felder wie folgt.
-${kpiFieldRules}
+${kpiFieldRules}${AREA_RULES}
+Jedes vorgeschlagene To-do muss eindeutig in diesen Bereich gehören; passt es besser in einen anderen, schlag ein anderes vor.
+
 
 Format: {"kpis":[{"area","name","unit","target","direction","source"}]}
 
@@ -229,7 +248,8 @@ ${contract(draft)}${akte(file)}`;
   }
   return `${named(name)}Aufgabe: Lege die zwei bis vier wichtigsten täglichen To-dos fest, an denen die Person jeden Tag sieht, ob sie dranbleibt. Lebensbereich mit Priorität: ${AREA_LABEL[area] ?? area}.
 
-${kpiFieldRules}- "area": der Lebensbereich, zu dem das To-do gehört (${AREAS.join(", ")}). Die meisten gehören zum priorisierten Bereich; höchstens zwei weitere Bereiche, und nur, wenn die Person sie im Gespräch selbst angesprochen hat.
+${kpiFieldRules}${AREA_RULES}
+- "area": der Lebensbereich, zu dem das To-do gehört (${AREAS.join(", ")}). Die meisten gehören zum priorisierten Bereich; höchstens zwei weitere Bereiche, und nur, wenn die Person sie im Gespräch selbst angesprochen hat.
 
 Format: {"kpis":[{"area","name","unit","target","direction","source"}]}
 
@@ -237,6 +257,32 @@ Zielvertrag:
 ${contract(draft)}${akte(file)}
 
 Gespräch: ${material || "(nicht verfügbar)"}`;
+}
+
+export const RankSchema = z.object({
+  ranks: z
+    .array(z.object({ id: z.string(), quadrant: z.enum(["now", "next", "later"]).catch("next"), points: z.number().int().min(1).max(10).catch(3), why: z.string().max(140).catch("") }))
+    .max(20),
+});
+
+/** Ranks the person's to-dos for today: what matters most, and how many score points each is worth. `todos`: "id: Bereich: Name" lines. */
+export function rankPrompt(draft: Draft, today: string, name: string | null, file: string | null, last: string, todos: string): string {
+  return `${named(name)}Aufgabe: Bewerte die To-dos der Person für heute (${today}) nach wichtig und dringend und vergib Score-Punkte. Grundlage sind ihre Vision, ihre Ziele (vor allem das Monatsziel) und die letzte Vereinbarung.
+
+- "ranks": ein Eintrag für jedes To-do unten, mit seiner "id".
+  - "quadrant": "now" = das Wichtigste heute (wichtig und dringend, zahlt direkt auf das Monatsziel oder die letzte Vereinbarung ein). Genau ein To-do bekommt "now", höchstens zwei. "next" = wichtig, bringt sie ihrer Vision näher. "later" = nett, aber heute nicht entscheidend.
+  - "points": 1 bis 10. "now" 8 bis 10, "next" 4 bis 7, "later" 1 bis 3. Die Punkte sind ihr Tagesscore: Wer das Wichtigste erledigt, sieht das sofort an der Zahl.
+  - "why": ein kurzer Satz, warum es heute so zählt.
+
+Format: {"ranks":[{"id","quadrant","points","why"}]}
+
+Zielvertrag:
+${contract(draft)}${akte(file)}
+
+Letzte Vereinbarung: ${last || "(keine)"}
+
+To-dos:
+${todos}`;
 }
 
 export const DayListSchema = z.object({
@@ -261,9 +307,9 @@ export function dayListPrompt(draft: Draft, today: string, name: string | null, 
   return `${named(name)}Aufgabe: Stell die Liste für heute (${today}) zusammen. Eine einzige Liste, sortiert nach wichtig und dringend. Sie leitet sich aus der Vision und den Zielen der Person ab und aus dem, was ihr in euren Gesprächen besprochen und vereinbart habt.
 
 - "items": 4 bis 8 Einträge. Jeder ist eine konkrete Handlung für heute, mit Verb am Anfang und greifbarem Ergebnis, in 5 bis 90 Minuten machbar.
-  - "title": höchstens 70 Zeichen. "why": ein kurzer Satz, warum das heute zählt, mit Bezug auf Vision, Ziel oder Vereinbarung ("Zahlt auf dein Monatsziel ein").
+  - "title": höchstens 70 Zeichen, ohne Minuten- oder Zeitangaben. "why": ein kurzer Satz, warum das heute zählt, mit Bezug auf Vision, Ziel oder Vereinbarung ("Zahlt auf dein Monatsziel ein").
   - "quadrant": "now" = wichtig und dringend (eine Vereinbarung für heute, eine Frist, etwas, das sonst den Plan kippt); "next" = wichtig, nicht dringend (der Schritt nach vorn zur Vision, das Herz der Liste – mindestens zwei Einträge); "later" = dringend, aber nicht wichtig (Kleinkram, der erledigt werden muss). Was weder wichtig noch dringend ist, kommt nicht auf die Liste.
-  - Jede tägliche Gewohnheit aus der Liste unten kommt als eigener Eintrag auf die Liste: "title" = ihr Name, "habit" = ihre id, sonst "habit" = "".
+  - Die täglichen Gewohnheiten unten stehen schon in ihren Lebensbereichen. Wiederhole sie nicht und nichts, was ihnen ähnelt; "habit" ist immer "".
   - Die letzte Vereinbarung gehört fast immer nach "now". Unerledigtes nimmst du wieder auf, wenn es noch zählt, kleiner geschnitten.
 - Nutze, was du über die Person weißt (Zeit pro Woche, Stolpersteine): lieber wenige machbare Einträge als eine Liste, die sie überfordert.
 
@@ -291,6 +337,17 @@ Format: {"why":string,"quadrant":string}
 
 Zielvertrag:
 ${contract(draft)}${akte(file)}`;
+}
+
+export const FileAreaSchema = z.object({ area: z.enum(["karriere", "finanzen", "beziehungen", "gesundheit", "persoenlichkeit"]) });
+
+/** Files a to-do the person wrote into the life area it pays into most directly. */
+export function fileAreaPrompt(name: string): string {
+  return `Aufgabe: Die Person hat sich dieses tägliche To-do vorgenommen: "${name}". Ordne es genau einem Bereich zu.
+${AREA_RULES}
+Wähle nur aus: karriere, finanzen, beziehungen, gesundheit, persoenlichkeit (Freizeit und Haushalt gehören zu persoenlichkeit).
+
+Format: {"area":string}`;
 }
 
 export const SceneSchema = z.object({ prompt: z.string().min(40).max(1500), caption: z.string().max(120) });

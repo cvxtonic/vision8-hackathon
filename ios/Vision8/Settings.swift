@@ -77,6 +77,37 @@ private func minutes(_ date: Date) -> Int {
     return (c.hour ?? 0) * 60 + (c.minute ?? 0)
 }
 
+/// Grouped settings surface: rows sit edge to edge, separated by hairlines.
+private struct SettingsGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(Ink.surface)
+            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Ink.line))
+    }
+}
+
+/// One row in a `SettingsGroup`: at least 44 pt, hairline above inset to the text.
+private struct SettingsRow<Content: View>: View {
+    var separator = true
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(spacing: Space.s) { content }
+            .font(.bodyText)
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(.horizontal, Space.m)
+            .padding(.vertical, Space.xxs)
+            .contentShape(Rectangle())
+            .overlay(alignment: .top) {
+                if separator {
+                    Rectangle().fill(Ink.line).frame(height: 0.5).padding(.leading, Space.m)
+                }
+            }
+    }
+}
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var reminders = false
@@ -91,110 +122,35 @@ struct SettingsView: View {
     @State private var calling = false
     @State private var callNote: String?
 
+    private static let weekdays = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"]
+    private static let rowTransition = AnyTransition.opacity.combined(with: .move(edge: .top))
+
     var body: some View {
         Screen {
             ScrollView {
-                VStack(alignment: .leading, spacing: 18) {
-                    Eyebrow("Profil")
-                    Text("Was dein Coach über dich weiß.").font(.display(28))
+                Page {
+                    Text("Profil").font(.pageTitle)
+                        .accessibilityAddTraits(.isHeader)
+                        .appear(0)
 
-                    FileRow()
+                    FileRow().appear(1)
 
-                    Card {
-                        Toggle(isOn: $reminders) {
-                            Text("Erinnerungen am Tag").font(.system(.headline, design: .rounded))
-                        }
-                        .onChange(of: reminders) { _, on in
-                            Task {
-                                if on {
-                                    if !(await Notifications.schedule(times)) {
-                                        reminders = false
-                                        error = "Mitteilungen sind in den iOS-Einstellungen für Vision 8 ausgeschaltet."
-                                    }
-                                } else {
-                                    Notifications.cancelAll()
-                                }
-                            }
-                        }
-                        if reminders {
-                            ForEach(Array(times.enumerated()), id: \.offset) { index, value in
-                                HStack {
-                                    DatePicker("Erinnerung \(index + 1)", selection: Binding(get: { date(value) }, set: { setTime(index, minutes($0)) }), displayedComponents: .hourAndMinute)
-                                        .font(.system(.subheadline, design: .rounded))
-                                    Button {
-                                        removeTime(index)
-                                    } label: {
-                                        Image(systemName: "minus.circle.fill").foregroundStyle(Ink.drift)
-                                    }
-                                    .buttonStyle(.plain)
-                                    .frame(minWidth: 44, minHeight: 44)
-                                    .accessibilityLabel("Erinnerung um \(clock(value)) entfernen")
-                                }
-                            }
-                            if times.count < 8 {
-                                Button { addTime() } label: { Label("Erinnerung hinzufügen", systemImage: "plus") }
-                                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                    .foregroundStyle(Ink.dawn)
-                                    .frame(minHeight: 44)
-                            }
-                        }
+                    remindersSection.appear(2)
+
+                    callSection.appear(3)
+
+                    if let error {
+                        ErrorNote(text: error).transition(Self.rowTransition)
                     }
-
-                    Card {
-                        Text("Abend-Anruf").font(.system(.headline, design: .rounded))
-                        Text("Dein Coach ruft dich zur gewählten Zeit an und fragt nach, wie dein Tag lief. Es spricht eine KI. Ohne Nummer gibt es keinen Anruf.")
-                            .font(.system(.footnote, design: .rounded))
-                            .foregroundStyle(Ink.muted)
-                        TextField("+49 170 1234567", text: $phone)
-                            .keyboardType(.phonePad)
-                            .textContentType(.telephoneNumber)
-                            .font(.system(.body, design: .rounded))
-                            .padding(14)
-                            .background(Ink.night, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .accessibilityLabel("Telefonnummer mit Ländervorwahl")
-                        DatePicker("Uhrzeit", selection: Binding(get: { date(callTime) }, set: { callTime = quarter(minutes($0)) }), displayedComponents: .hourAndMinute)
-                            .font(.system(.subheadline, design: .rounded))
-                        HStack(spacing: 6) {
-                            ForEach(Array(["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"].enumerated()), id: \.offset) { index, name in
-                                let day = index + 1
-                                let on = days.contains(day)
-                                Button(name) {
-                                    Haptics.tap()
-                                    if on { days.remove(day) } else { days.insert(day) }
-                                }
-                                .font(.system(.footnote, design: .rounded).weight(.semibold))
-                                .frame(maxWidth: .infinity, minHeight: 40)
-                                .background(on ? Ink.dawn : Ink.night, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                .foregroundStyle(on ? Ink.night : Ink.muted)
-                                .accessibilityAddTraits(on ? .isSelected : [])
-                            }
-                        }
-                        Button(saved ? "Gespeichert" : "Speichern") { Task { await saveContact() } }
-                            .buttonStyle(PressStyle(filled: false))
-                            .disabled(!phone.isEmpty && normalizedPhone == nil)
-                        if let contact = model.state?.contact, contact.phone != nil {
-                            if calling {
-                                CoachThinking(text: "Der Coach wählt")
-                            } else {
-                                Button("Jetzt anrufen lassen") { Task { await callNow() } }
-                                    .buttonStyle(PressStyle())
-                            }
-                            if let callNote {
-                                Text(callNote)
-                                    .font(.system(.footnote, design: .rounded))
-                                    .foregroundStyle(Ink.good)
-                            }
-                        }
-                    }
-
-                    if let error { ErrorNote(text: error) }
 
                     Button("Alle meine Daten löschen", role: .destructive) { confirmDelete = true }
-                        .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                        .foregroundStyle(Ink.drift)
+                        .font(.callout)
+                        .foregroundStyle(Ink.drift.opacity(0.85))
                         .frame(maxWidth: .infinity, minHeight: 44)
+                        .padding(.top, Space.s)
+                        .appear(4)
                 }
-                .padding(24)
+                .animation(Motion.smooth, value: error)
             }
             .scrollDismissesKeyboard(.interactively)
         }
@@ -208,12 +164,141 @@ struct SettingsView: View {
         }
         .confirmationDialog("Vision, Ziele und alle Tage werden endgültig gelöscht.", isPresented: $confirmDelete, titleVisibility: .visible) {
             Button("Alles löschen", role: .destructive) {
+                Haptics.warning()
                 Task {
                     do { try await model.reset() } catch { self.error = error.localizedDescription }
                 }
             }
             Button("Abbrechen", role: .cancel) {}
         }
+    }
+
+    private var remindersSection: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            SectionHeader(title: "Erinnerungen")
+            SettingsGroup {
+                SettingsRow(separator: false) {
+                    Toggle(isOn: $reminders.animation(Motion.smooth)) {
+                        Text("Erinnerungen am Tag")
+                    }
+                    .tint(Ink.dawn)
+                }
+                .onChange(of: reminders) { _, on in
+                    Task {
+                        if on {
+                            if !(await Notifications.schedule(times)) {
+                                withAnimation(Motion.smooth) {
+                                    reminders = false
+                                    error = "Mitteilungen sind in den iOS-Einstellungen für Vision 8 ausgeschaltet."
+                                }
+                            }
+                        } else {
+                            Notifications.cancelAll()
+                        }
+                    }
+                }
+                if reminders {
+                    ForEach(Array(times.enumerated()), id: \.offset) { index, value in
+                        SettingsRow {
+                            DatePicker("Erinnerung \(index + 1)", selection: Binding(get: { date(value) }, set: { setTime(index, minutes($0)) }), displayedComponents: .hourAndMinute)
+                            Button {
+                                removeTime(index)
+                            } label: {
+                                Image(systemName: "minus.circle.fill")
+                                    .symbolRenderingMode(.hierarchical)
+                                    .foregroundStyle(Ink.drift)
+                                    .frame(minWidth: 44, minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("Erinnerung um \(clock(value)) entfernen")
+                        }
+                        .transition(Self.rowTransition)
+                    }
+                    if times.count < 8 {
+                        Button { addTime() } label: {
+                            SettingsRow {
+                                Label("Erinnerung hinzufügen", systemImage: "plus")
+                                    .foregroundStyle(Ink.dawn)
+                            }
+                        }
+                        .buttonStyle(RowPress())
+                        .transition(Self.rowTransition)
+                    }
+                }
+            }
+        }
+    }
+
+    private var callSection: some View {
+        VStack(alignment: .leading, spacing: Space.s) {
+            SectionHeader(title: "Abend-Anruf", hint: "Dein Coach ruft dich zur gewählten Zeit an und fragt, wie dein Tag lief. Es spricht eine KI. Ohne Nummer gibt es keinen Anruf.")
+            SettingsGroup {
+                SettingsRow(separator: false) {
+                    Text("Nummer")
+                    TextField("+49 170 1234567", text: $phone)
+                        .keyboardType(.phonePad)
+                        .textContentType(.telephoneNumber)
+                        .multilineTextAlignment(.trailing)
+                        .accessibilityLabel("Telefonnummer mit Ländervorwahl")
+                }
+                SettingsRow {
+                    DatePicker("Uhrzeit", selection: Binding(get: { date(callTime) }, set: { callTime = quarter(minutes($0)) }), displayedComponents: .hourAndMinute)
+                }
+                SettingsRow {
+                    HStack(spacing: Space.xs) {
+                        ForEach(Array(Self.weekdays.enumerated()), id: \.offset) { index, name in
+                            let day = index + 1
+                            let on = days.contains(day)
+                            Button {
+                                Haptics.tap()
+                                withAnimation(Motion.snappy) {
+                                    if on { days.remove(day) } else { days.insert(day) }
+                                }
+                            } label: {
+                                Text(name)
+                                    .font(.note.weight(.semibold))
+                                    .foregroundStyle(on ? Ink.dawn : Ink.muted)
+                                    .frame(maxWidth: .infinity, minHeight: 36)
+                                    .background(on ? Ink.dawn.opacity(0.16) : Ink.night.opacity(0.6), in: Capsule())
+                                    .frame(minHeight: 44)
+                                    .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityAddTraits(on ? .isSelected : [])
+                        }
+                    }
+                    .padding(.vertical, Space.xxs)
+                }
+            }
+
+            Button(saved ? "Gespeichert" : "Speichern") { Task { await saveContact() } }
+                .buttonStyle(PressStyle(filled: false))
+                .disabled(!phone.isEmpty && normalizedPhone == nil)
+                .padding(.top, Space.xxs)
+
+            if let contact = model.state?.contact, contact.phone != nil {
+                Group {
+                    if calling {
+                        CoachThinking(text: "Der Coach wählt")
+                            .frame(maxWidth: .infinity, minHeight: 54)
+                    } else {
+                        Button("Jetzt anrufen lassen") { Task { await callNow() } }
+                            .buttonStyle(PressStyle())
+                    }
+                }
+                .transition(.opacity)
+                if let callNote {
+                    Text(callNote)
+                        .font(.note)
+                        .foregroundStyle(Ink.good)
+                        .frame(maxWidth: .infinity)
+                        .transition(Self.rowTransition)
+                }
+            }
+        }
+        .animation(Motion.smooth, value: calling)
+        .animation(Motion.smooth, value: callNote)
     }
 
     /// E.164, accepting spaces and a leading 0 for German numbers.
@@ -233,12 +318,12 @@ struct SettingsView: View {
     }
 
     private func addTime() {
-        times.append(min((times.max() ?? 12 * 60) + 60, 22 * 60))
+        withAnimation(Motion.smooth) { times.append(min((times.max() ?? 12 * 60) + 60, 22 * 60)) }
         persistTimes()
     }
 
     private func removeTime(_ index: Int) {
-        times.remove(at: index)
+        _ = withAnimation(Motion.smooth) { times.remove(at: index) }
         persistTimes()
     }
 
@@ -268,10 +353,10 @@ struct SettingsView: View {
             try await model.api.saveContact(phone: phone.isEmpty ? nil : normalizedPhone, callHour: time / 60, callMinute: time % 60, days: days.sorted())
             error = nil
             Haptics.success()
-            saved = true
+            withAnimation(Motion.snappy) { saved = true }
             await model.refresh()
             try? await Task.sleep(for: .seconds(2))
-            saved = false
+            withAnimation(Motion.snappy) { saved = false }
         } catch {
             self.error = error.localizedDescription
         }

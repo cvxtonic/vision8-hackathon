@@ -27,9 +27,13 @@ import {
   reflectPrompt,
   ReflectSchema,
   DayListSchema,
+  RankSchema,
+  rankPrompt,
   dayListPrompt,
   SortSchema,
   sortPrompt,
+  fileAreaPrompt,
+  FileAreaSchema,
   SceneSchema,
   scenePrompt,
   KpiSetSchema,
@@ -372,7 +376,7 @@ app.get("/v1/state", async (c) => {
   for (const day of new Set([...Object.keys(logs), ...habits.keys()])) {
     const h = habits.get(day);
     // Days with the one list score by it; older days by the to-do formula.
-    scores[day] = h?.list_json ? listScore(JSON.parse(h.list_json) as ListItem[]) : dayScore(kpis, logs[day] ?? {}, h?.planned === 1, h?.reflected === 1);
+    scores[day] = h?.list_json ? listScore(withHabits(JSON.parse(h.list_json) as ListItem[], kpis, logs[day] ?? {})) : dayScore(kpis, logs[day] ?? {}, h?.planned === 1, h?.reflected === 1);
   }
   const [{ goals }, day, planned, change, carry] = await Promise.all([
     loadDraft(c.env, device),
@@ -503,14 +507,20 @@ async function saveKpis(env: Env, device: string, kpis: Kpi[]): Promise<void> {
   await env.DB.prepare("UPDATE users SET kpis_json = ? WHERE device_id = ?").bind(JSON.stringify(kpis.slice(0, 15)), device).run();
 }
 
-/** The person sets a KPI for a life area themselves. */
+/** The person sets a KPI themselves; without an area the coach files it into the right one. */
 app.post("/v1/kpis/add", async (c) => {
-  const k = AreaKpi.parse(await c.req.json());
+  const raw = AreaKpi.partial({ area: true }).parse(await c.req.json());
   await loadDraft(c.env, c.var.device); // 409 without a contract
+  let area = raw.area;
+  if (!area) {
+    await meter(c);
+    area = (await ask(c.env, FileAreaSchema, fileAreaPrompt(raw.name))).area;
+  }
+  const k = { name: raw.name, area };
   const kpis = await loadKpis(c.env, c.var.device);
   kpis.push({ ...k, id: crypto.randomUUID(), source: "manual", direction: "check", target: 1, unit: "" });
   await saveKpis(c.env, c.var.device, kpis);
-  return c.json({ kpis });
+  return c.json({ kpis, area });
 });
 
 /** The coach suggests one or two KPIs for a life area that has none yet. */
@@ -659,6 +669,14 @@ async function saveList(env: Env, device: string, items: ListItem[]): Promise<vo
     .run();
 }
 
+/** The area to-dos with the coach's rank for the day (quadrant and score points); unranked ones count as "next", 4 points. */
+function withHabits(list: ListItem[], kpis: Kpi[], logged: Record<string, number>): ListItem[] {
+  return kpis.map((k): ListItem => {
+    const rank = list.find((i) => i.kpiId === k.id);
+    return { id: k.id, title: k.name, why: rank?.why ?? "", quadrant: rank?.quadrant ?? "next", points: rank?.points ?? 4, source: "habit", done: logged[k.id] !== undefined && kpiMet(k, logged[k.id] ?? 0), kpiId: k.id };
+  });
+}
+
 const ORDER = { now: 0, next: 1, later: 2 } as const;
 const sortList = (items: ListItem[]) => [...items].sort((a, b) => ORDER[a.quadrant] - ORDER[b.quadrant]);
 
@@ -677,16 +695,17 @@ app.post("/v1/today/list", async (c) => {
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const before = existing ?? (await loadList(env, device, yesterday.toISOString().slice(0, 10))) ?? [];
   const open = before.filter((i) => !i.done && i.source !== "habit").map((i) => i.title).join("; ");
-  const made = await ask(env, DayListSchema, dayListPrompt(draft, today, name, file, await lastAgreement(env, device), kpis.map((k) => `${k.id}: ${k.name}`).join("; "), open));
+  // The day's list is the area to-dos, ranked by the coach: one "now" (the most important), and score points for each.
+  void open;
+  const all = await loadKpis(env, device);
+  const made = all.length
+    ? await ask(env, RankSchema, rankPrompt(draft, today, name, file, await lastAgreement(env, device), all.map((k) => `${k.id}: ${AREA_LABEL[k.area ?? ""] ?? "Allgemein"}: ${k.name}`).join("\n")))
+    : { ranks: [] };
   const logged = (await kpiLogs(env, device, today))[today] ?? {};
-  const kpiIds = new Set(kpis.map((k) => k.id));
-  // A fresh list keeps what is already done today.
-  const kept = (existing ?? []).filter((i) => i.done);
-  const items: ListItem[] = made.items.map((i) => {
-    const kpiId = kpiIds.has(i.habit) ? i.habit : undefined;
-    return { id: crypto.randomUUID(), title: i.title, why: i.why, quadrant: i.quadrant, source: kpiId ? "habit" : "coach", ...(kpiId && { kpiId }), done: kpiId ? (logged[kpiId] ?? 0) >= 1 : false };
+  const list: ListItem[] = all.map((k) => {
+    const r = made.ranks.find((x) => x.id === k.id);
+    return { id: crypto.randomUUID(), title: k.name, why: r?.why ?? "", quadrant: r?.quadrant ?? "next", points: r?.points ?? 4, source: "habit", kpiId: k.id, done: logged[k.id] !== undefined && kpiMet(k, logged[k.id] ?? 0) };
   });
-  const list = sortList([...kept, ...items.filter((i) => !kept.some((k) => k.title === i.title))]).slice(0, 12);
   await saveList(env, device, list);
   return c.json({ items: list });
 });
@@ -763,7 +782,11 @@ async function listForCoach(env: Env, device: string): Promise<string> {
   const yesterday = new Date(`${today}T12:00:00Z`);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
   const [now, before] = await Promise.all([loadList(env, device, today), loadList(env, device, yesterday.toISOString().slice(0, 10))]);
-  const lines = (now ?? []).map((i) => `${i.done ? "erledigt" : "offen"}: ${i.title} (${QUADRANT_LABEL[i.quadrant]})`);
+  const lines = (now ?? []).filter((i) => i.source !== "habit").map((i) => `${i.done ? "erledigt" : "offen"}: ${i.title} (${QUADRANT_LABEL[i.quadrant]})`);
+  const top = (now ?? []).filter((i) => i.source === "habit" && i.quadrant === "now").map((i) => i.title);
+  if (top.length) lines.push(`Wichtigstes To-do heute: ${top.join("; ")}`);
+  const habits = await kpiStatus(env, device);
+  if (habits) lines.push(`Tägliche Gewohnheiten:\n${habits}`);
   const missed = (before ?? []).filter((i) => !i.done && i.source !== "habit" && !(now ?? []).some((n) => n.title === i.title));
   const out = [lines.length ? `Heute:\n${lines.join("\n")}` : "Für heute gibt es noch keine Liste.", missed.length ? `Gestern offen geblieben:\n${missed.map((i) => i.title).join("\n")}` : ""];
   return out.filter(Boolean).join("\n\n").slice(0, 3000);

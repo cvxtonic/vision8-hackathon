@@ -7,7 +7,7 @@ export const VISION8_INTAKE_DESCRIPTOR = {
   id: "vision8-intake",
   tenant: "vision8",
   version: 1,
-  persona: { name: "Coach", company: "Vision 8", language: "de-DE" },
+  persona: { name: "Clara", company: "Vision 8", language: "de-DE" },
   prompt: { instructions: VISION8_INTAKE_INSTRUCTIONS, opening: VISION8_INTAKE_OPENING },
   // Personal data (life situation, values, goals): EU path only.
   model: { alias: "gemini-live-3.8-eu", allowed: ["gemini-live-3.8-eu"] },

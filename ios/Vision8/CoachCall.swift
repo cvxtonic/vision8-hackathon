@@ -30,7 +30,7 @@ final class CoachCall {
 
     var status: String {
         switch live.state {
-        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Der Coach spricht" : "Der Coach hört zu"
+        case .live: return Date().timeIntervalSince(live.lastAgentAudio) < 0.6 ? "Clara spricht" : "Clara hört zu"
         case .finished: return "Gespräch beendet"
         case .failed: return "Verbindung unterbrochen"
         default: return "Verbinde …"
@@ -125,11 +125,12 @@ struct CoachBar: View {
 
     var body: some View {
         let call = model.call
-        HStack(spacing: 12) {
+        HStack(spacing: Space.s) {
             Image(systemName: "waveform")
                 .font(.title3)
                 .foregroundStyle(call.live.state == .live ? Ink.dawn : Ink.muted)
                 .symbolEffect(.variableColor.iterative, isActive: call.live.state == .live)
+                .frame(width: 28)
             VStack(alignment: .leading, spacing: 2) {
                 TimelineView(.periodic(from: .now, by: 0.5)) { _ in
                     Text(call.failure == nil ? call.status : "Verbindung unterbrochen")
@@ -140,6 +141,8 @@ struct CoachBar: View {
                     .font(.system(.subheadline, design: .rounded))
                     .lineLimit(2)
                     .foregroundStyle(Ink.paper)
+                    .contentTransition(.opacity)
+                    .animation(Motion.smooth, value: call.live.agentText)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             Button {
@@ -152,18 +155,44 @@ struct CoachBar: View {
                     .frame(width: 44, height: 44)
                     .background(Ink.drift, in: Circle())
             }
+            .buttonStyle(OrbButtonPress())
             .accessibilityLabel("Gespräch beenden")
         }
-        .padding(.leading, 16)
-        .padding(.trailing, 8)
-        .padding(.vertical, 8)
-        .background(Ink.surface, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous).strokeBorder(Ink.dawn.opacity(0.4)))
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
-        .contentShape(Rectangle())
+        .padding(.leading, Space.m)
+        .padding(.trailing, Space.xs)
+        .padding(.vertical, Space.xs)
+        .modifier(BarSurface())
+        .contentShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
         .onTapGesture { call.expanded = true }
         .accessibilityAddTraits(.isButton)
         .accessibilityHint("Öffnet das Gespräch")
+    }
+}
+
+/// Liquid Glass on iOS 26, the solid surface card before.
+private struct BarSurface: ViewModifier {
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+        if #available(iOS 26, *) {
+            content
+                .glassEffect(.regular.interactive(), in: shape)
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
+        } else {
+            content
+                .background(Ink.surface, in: shape)
+                .overlay(shape.strokeBorder(Ink.line))
+                .shadow(color: .black.opacity(0.35), radius: 16, y: 6)
+        }
+    }
+}
+
+/// Round control: scales down while pressed.
+private struct OrbButtonPress: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.9 : 1)
+            .animation(Motion.snappy, value: configuration.isPressed)
     }
 }
 
@@ -174,21 +203,27 @@ struct CoachSheet: View {
     var body: some View {
         let call = model.call
         Screen {
-            VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 LiveCaptions(live: call.live)
                 if let failure = call.failure {
-                    ErrorNote(text: failure)
-                    Button("Noch einmal verbinden") {
-                        call.bank()
-                        Task { await call.connect(model.api) }
+                    Group {
+                        ErrorNote(text: failure)
+                        Button("Noch einmal verbinden") {
+                            call.bank()
+                            Task { await call.connect(model.api) }
+                        }
+                        .buttonStyle(PressStyle(filled: false))
                     }
-                    .buttonStyle(PressStyle(filled: false))
+                    .transition(.opacity.combined(with: .move(edge: .bottom)))
                 }
                 Button("Gespräch beenden") { call.end(model.api) { await model.refresh() } }
                     .buttonStyle(PressStyle())
             }
-            .padding(24)
+            .padding(.horizontal, Space.page)
+            .padding(.bottom, Space.page)
+            .animation(Motion.smooth, value: call.failure)
         }
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -196,40 +231,64 @@ struct CoachSheet: View {
 struct CoachSummary: View {
     @Environment(AppModel.self) private var model
 
+    /// Which of the four states is showing, so the change between them can be animated.
+    private var stage: Int {
+        let call = model.call
+        if call.crisis { return 0 }
+        if call.debrief != nil { return 1 }
+        if call.error != nil { return 2 }
+        return 3
+    }
+
     var body: some View {
         let call = model.call
         Screen {
-            VStack(alignment: .leading, spacing: 16) {
-                if call.crisis {
-                    Text("Danke, dass du so offen warst.").font(.display(26))
-                    Text("Dein Coach hat das Gespräch beendet. Die Telefonseelsorge erreichst du kostenlos und rund um die Uhr unter 0800 111 0 111, im Notfall die 112.")
-                        .font(.system(.body, design: .rounded))
-                    if let tel = URL(string: "tel:08001110111") {
+            VStack(alignment: .leading, spacing: Space.section) {
+                VStack(alignment: .leading, spacing: Space.s) {
+                    if call.crisis {
+                        Text("Danke, dass du so offen warst.").font(.pageTitle).fixedSize(horizontal: false, vertical: true)
+                        Text("Dein Coach hat das Gespräch beendet. Die Telefonseelsorge erreichst du kostenlos und rund um die Uhr unter 0800 111 0 111, im Notfall die 112.")
+                            .font(.bodyText)
+                            .fixedSize(horizontal: false, vertical: true)
+                    } else if let debrief = call.debrief {
+                        Eyebrow("Aus eurem Gespräch")
+                        Text(debrief.summary).font(.sectionTitle).fixedSize(horizontal: false, vertical: true)
+                        if !debrief.insight.isEmpty {
+                            HStack(alignment: .top, spacing: Space.s) {
+                                Capsule().fill(Ink.dawn).frame(width: 3)
+                                Text(debrief.insight).font(.quote).fixedSize(horizontal: false, vertical: true)
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.top, Space.xs)
+                        }
+                    } else if let error = call.error {
+                        Text("Danke für das Gespräch.").font(.pageTitle)
+                        ErrorNote(text: error)
+                    } else {
+                        Text("Danke für das Gespräch.").font(.pageTitle)
+                        CoachThinking(text: "Dein Coach hält das Wichtigste fest.")
+                    }
+                }
+                .id(stage)
+                .transition(.opacity)
+                Spacer(minLength: 0)
+                VStack(spacing: Space.s) {
+                    if call.crisis, let tel = URL(string: "tel:08001110111") {
                         Link("Telefonseelsorge anrufen", destination: tel).buttonStyle(PressStyle())
                     }
-                } else if let debrief = call.debrief {
-                    Eyebrow("Aus eurem Gespräch")
-                    Text(debrief.summary).font(.display(22)).fixedSize(horizontal: false, vertical: true)
-                    if !debrief.insight.isEmpty {
-                        HStack(alignment: .top, spacing: 12) {
-                            Capsule().fill(Ink.dawn).frame(width: 3)
-                            Text(debrief.insight).font(.quote).fixedSize(horizontal: false, vertical: true)
-                        }
-                        .fixedSize(horizontal: false, vertical: true)
+                    if !call.crisis, call.debrief == nil, call.error != nil {
+                        Button("Noch einmal versuchen") { Task { await call.summarize(model.api) } }.buttonStyle(PressStyle(filled: false))
                     }
-                } else if let error = call.error {
-                    Text("Danke für das Gespräch.").font(.display(26))
-                    ErrorNote(text: error)
-                    Button("Noch einmal versuchen") { Task { await call.summarize(model.api) } }.buttonStyle(PressStyle(filled: false))
-                } else {
-                    Text("Danke für das Gespräch.").font(.display(26))
-                    CoachThinking(text: "Dein Coach hält das Wichtigste fest.")
+                    // The crisis line is the one filled button there; "Fertig" stays quiet next to it.
+                    Button(call.debrief == nil && !call.crisis && call.error == nil ? "Im Hintergrund weiter" : "Fertig") { call.close() }
+                        .buttonStyle(PressStyle(filled: call.debrief != nil))
                 }
-                Button(call.debrief == nil && !call.crisis && call.error == nil ? "Im Hintergrund weiter" : "Fertig") { call.close() }
-                    .buttonStyle(PressStyle(filled: call.debrief != nil || call.crisis))
-                Spacer(minLength: 0)
             }
-            .padding(24)
+            .padding(.horizontal, Space.page)
+            .padding(.top, Space.section)
+            .padding(.bottom, Space.page)
+            .animation(Motion.smooth, value: stage)
         }
+        .presentationDragIndicator(.visible)
     }
 }

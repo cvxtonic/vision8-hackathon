@@ -2,24 +2,87 @@ import SwiftUI
 
 let goodDay = 70
 
+/// STYLEGUIDE: list rows sit 14 pt from the card edge.
+private let rowInset: CGFloat = 14
+private let cardShape = RoundedRectangle(cornerRadius: Radius.card, style: .continuous)
+
 /// A progress ring with an optional number in the middle.
 struct Ring: View {
     let progress: Double
     var size: CGFloat = 64
     var line: CGFloat = 6
     var label: String?
+    /** Fill colour; nil = dawn while running, good when full. */
+    var tint: Color? = nil
 
     var body: some View {
         ZStack {
-            Circle().stroke(Ink.line, lineWidth: line)
+            Circle().stroke(tint.map { $0.opacity(0.2) } ?? Ink.line, lineWidth: line)
             Circle()
                 .trim(from: 0, to: min(max(progress, 0), 1))
-                .stroke(progress >= 1 ? Ink.good : Ink.dawn, style: StrokeStyle(lineWidth: line, lineCap: .round))
+                .stroke(tint ?? (progress >= 1 ? Ink.good : Ink.dawn), style: StrokeStyle(lineWidth: line, lineCap: .round))
                 .rotationEffect(.degrees(-90))
-            if let label { Text(label).font(.system(size: size * 0.3, weight: .bold, design: .rounded)) }
+            if let label {
+                Text(label)
+                    .font(.system(size: size * 0.3, weight: .bold, design: .rounded))
+                    .contentTransition(.numericText(value: progress))
+            }
         }
         .frame(width: size, height: size)
-        .animation(.easeOut(duration: 0.5), value: progress)
+        .animation(Motion.smooth, value: progress)
+    }
+}
+
+/// The day score as one ring made of coloured parts: the priorities (dawn) and each life area in its own colour.
+/// Each part's length is its weight in the score; its filled share is what is done.
+struct SegmentedRing: View {
+    struct Part: Identifiable {
+        let id: String
+        let color: Color
+        let total: Double
+        let done: Double
+    }
+
+    let parts: [Part]
+    var size: CGFloat = 64
+    var line: CGFloat = 6
+    var label: String
+
+    var body: some View {
+        let sum = parts.reduce(0) { $0 + $1.total }
+        let gap = parts.count > 1 ? 0.012 : 0
+        ZStack {
+            if sum == 0 {
+                Circle().stroke(Ink.line, lineWidth: line)
+            }
+            ForEach(Array(spans(sum: sum).enumerated()), id: \.offset) { _, span in
+                let from = span.start + gap / 2
+                let to = max(from, span.end - gap / 2)
+                Circle()
+                    .trim(from: from, to: to)
+                    .stroke(span.part.color.opacity(0.2), style: StrokeStyle(lineWidth: line, lineCap: .butt))
+                    .rotationEffect(.degrees(-90))
+                Circle()
+                    .trim(from: from, to: from + (to - from) * min(span.part.done / max(span.part.total, 0.001), 1))
+                    .stroke(span.part.color, style: StrokeStyle(lineWidth: line, lineCap: .butt))
+                    .rotationEffect(.degrees(-90))
+            }
+            Text(label)
+                .font(.system(size: size * 0.3, weight: .bold, design: .rounded))
+                .contentTransition(.numericText())
+        }
+        .frame(width: size, height: size)
+        .animation(Motion.smooth, value: parts.map(\.done))
+    }
+
+    private func spans(sum: Double) -> [(part: Part, start: Double, end: Double)] {
+        guard sum > 0 else { return [] }
+        var start = 0.0
+        return parts.map { part in
+            let end = start + part.total / sum
+            defer { start = end }
+            return (part, start, end)
+        }
     }
 }
 
@@ -28,18 +91,38 @@ struct DayScoreCard: View {
     @Environment(AppModel.self) private var model
 
     private var score: Int { model.state?.dayScore ?? 0 }
-    private var open: Int { (model.state?.list ?? []).filter { !$0.done }.count }
+    /// Same weights as the server's score: each to-do counts its points for today.
+    private var parts: [SegmentedRing.Part] {
+        let values = model.state?.kpiToday ?? [:]
+        let main = model.state?.area ?? "karriere"
+        let points = Dictionary((model.state?.list ?? []).compactMap { i in i.kpiId.map { ($0, Double(i.points ?? 4)) } }, uniquingKeysWith: { a, _ in a })
+        let grouped = Dictionary(grouping: model.state?.kpis ?? []) { $0.area ?? main }
+        return Area.all.compactMap { area in
+            guard let items = grouped[area.id], !items.isEmpty else { return nil }
+            let total = items.reduce(0) { $0 + (points[$1.id] ?? 4) }
+            let done = items.filter { kpi in values[kpi.id].map(kpi.met) ?? false }.reduce(0) { $0 + (points[$1.id] ?? 4) }
+            return .init(id: area.id, color: area.color, total: total, done: done)
+        }
+    }
+
+    /// Open priorities plus open area habits.
+    private var open: Int {
+        let values = model.state?.kpiToday ?? [:]
+        return (model.state?.kpis ?? []).filter { kpi in !(values[kpi.id].map(kpi.met) ?? false) }.count
+    }
 
     var body: some View {
         Card {
-            HStack(spacing: 16) {
-                Ring(progress: Double(score) / 100, label: "\(score)")
-                    .contentTransition(.numericText(value: Double(score)))
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Dein Tag").font(.system(.headline, design: .rounded))
+            HStack(spacing: Space.m) {
+                SegmentedRing(parts: parts, size: 60, line: 6, label: "\(score)")
+                VStack(alignment: .leading, spacing: Space.xxs) {
+                    Text("Dein Tag").font(.cardTitle)
                     Text(subline)
-                        .font(.system(.subheadline, design: .rounded))
+                        .font(.callout)
                         .foregroundStyle(Ink.muted)
+                        .lineLimit(2)
+                        .contentTransition(.opacity)
+                        .animation(Motion.smooth, value: subline)
                 }
                 Spacer(minLength: 0)
             }
@@ -63,32 +146,45 @@ struct AreaList: View {
     @State private var error: String?
     @State private var entering: Kpi?
     @State private var adding: Area?
+    @State private var addingFree = false
+    @State private var filed: String?
     /** The to-do just added that the person wants to talk through with the coach. */
     @State private var talkAbout: TalkTopic?
     @State private var suggesting: String?
 
     private var kpis: [Kpi] { model.state?.kpis ?? [] }
     private var values: [String: Double] { model.state?.kpiToday ?? [:] }
+    private var ranks: [String: ListItem] {
+        Dictionary((model.state?.list ?? []).compactMap { i in i.kpiId.map { ($0, i) } }, uniquingKeysWith: { a, _ in a })
+    }
+    private func points(_ kpi: Kpi) -> Int { ranks[kpi.id]?.points ?? 4 }
+    private func isTop(_ kpi: Kpi) -> Bool { ranks[kpi.id]?.quadrant == "now" }
     private var mainArea: String { model.state?.area ?? "karriere" }
 
     /// The five life areas shown on Heute (plus the main area, should it be another), the main area first.
     private static let shown = ["karriere", "gesundheit", "finanzen", "beziehungen", "persoenlichkeit"]
 
     private var areas: [(area: Area, kpis: [Kpi])] {
-        let grouped = Dictionary(grouping: kpis) { $0.area ?? mainArea }
+        let grouped = Dictionary(grouping: kpis.sorted { points($0) > points($1) }) { $0.area ?? mainArea }
         let ids = [mainArea] + Self.shown.filter { $0 != mainArea }
         return ids.compactMap { id in Area.all.first { $0.id == id }.map { ($0, grouped[id] ?? []) } }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: Space.xs) {
             ForEach(areas, id: \.area.id) { entry in areaRow(entry.area, entry.kpis) }
+            Button { addingFree = true } label: {
+                Label("Eigenes To-do – Clara sortiert es ein", systemImage: "wand.and.stars")
+            }
+            .buttonStyle(PressStyle(filled: false))
+            .padding(.top, Space.xs)
+            if let filed { Text(filed).font(.note).foregroundStyle(Ink.muted).transition(.opacity) }
             if let error { ErrorNote(text: error) }
         }
         .task { await syncHealth() }
         .onAppear {
             if !didOpenMain {
-                expanded.insert(mainArea)
+                expanded = Set(areas.map(\.area.id)) // every area starts open
                 didOpenMain = true
             }
         }
@@ -113,6 +209,23 @@ struct AreaList: View {
             }
             .presentationDetents([.height(340)])
         }
+        .sheet(isPresented: $addingFree) {
+            NewKpi(area: nil) { name, talk in
+                addingFree = false
+                Task {
+                    var landed: Area?
+                    await run {
+                        let id = try await model.api.addKpi(area: nil, name: name)
+                        landed = Area.all.first { $0.id == id }
+                    }
+                    guard let landed, error == nil else { return }
+                    expanded.insert(landed.id)
+                    withAnimation(Motion.smooth) { filed = "Clara hat „\(name)“ in \(landed.title) einsortiert." }
+                    if talk { talkAbout = TalkTopic(id: "\(landed.title): \(name)") }
+                }
+            }
+            .presentationDetents([.height(340)])
+        }
     }
 
     private struct TalkTopic: Identifiable { let id: String }
@@ -123,29 +236,29 @@ struct AreaList: View {
         return VStack(spacing: 0) {
             Button {
                 Haptics.tap()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) {
+                withAnimation(Motion.snappy) {
                     if open { expanded.remove(area.id) } else { expanded.insert(area.id) }
                 }
             } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: area.symbol).foregroundStyle(Ink.muted).frame(width: 22)
-                    Text(area.title).font(.system(.body, design: .rounded).weight(.semibold))
+                HStack(spacing: Space.s) {
+                    Image(systemName: area.symbol).foregroundStyle(area.color).frame(width: 22)
+                    Text(area.title).font(.bodyText.weight(.semibold))
                     Spacer()
-                        if items.isEmpty {
-                        Text("noch leer").font(.caption).foregroundStyle(Ink.muted)
+                    if items.isEmpty {
+                        Text("noch leer").font(.note).foregroundStyle(Ink.muted)
                     } else {
-                        Ring(progress: Double(done) / Double(items.count), size: 30, line: 4)
+                        Ring(progress: Double(done) / Double(items.count), size: 30, line: 4, tint: area.color)
                     }
                     Image(systemName: "chevron.down")
                         .font(.caption.weight(.semibold))
                         .foregroundStyle(Ink.muted)
                         .rotationEffect(.degrees(open ? 180 : 0))
                 }
-                .padding(.horizontal, 14)
+                .padding(.horizontal, rowInset)
                 .frame(minHeight: 56)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPress())
             .accessibilityLabel("\(area.title), \(done) von \(items.count) erreicht")
             .accessibilityHint(open ? "Einklappen" : "Aufklappen")
             if open {
@@ -153,15 +266,15 @@ struct AreaList: View {
                     ForEach(items) { kpi in kpiRow(kpi) }
                     if items.isEmpty {
                         Text("Noch keine To-dos. Lege fest, was du in diesem Bereich jeden Tag tun willst.")
-                            .font(.system(.footnote, design: .rounded))
+                            .font(.note)
                             .foregroundStyle(Ink.muted)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.vertical, 8)
+                            .padding(.vertical, Space.xs)
                     }
                     if suggesting == area.id {
                         CoachThinking(text: "Der Coach schlägt etwas vor").frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                     } else {
-                        HStack(spacing: 16) {
+                        HStack(spacing: Space.m) {
                             if items.isEmpty {
                                 Button("Coach vorschlagen lassen") {
                                     suggesting = area.id
@@ -174,42 +287,67 @@ struct AreaList: View {
                             Button { adding = area } label: { Label(items.isEmpty ? "Selbst festlegen" : "To-do hinzufügen", systemImage: "plus") }
                             Spacer()
                         }
-                        .font(.system(.footnote, design: .rounded).weight(.semibold))
+                        .font(.note.weight(.semibold))
                         .foregroundStyle(Ink.dawn)
                         .frame(minHeight: 44)
                     }
                 }
-                .padding(.horizontal, 14)
-                .padding(.bottom, 6)
-                .transition(.opacity)
+                .padding(.horizontal, rowInset)
+                .padding(.bottom, Space.xxs)
+                .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.line))
+        .background(Ink.surface, in: cardShape)
+        .clipShape(cardShape)
+        .overlay(cardShape.strokeBorder(Ink.line))
     }
 
     private func kpiRow(_ kpi: Kpi) -> some View {
         let value = values[kpi.id]
         let met = value.map(kpi.met) ?? false
+        let top = isTop(kpi) && !met
         return SwipeRow(done: { Task { await complete(kpi) } }, delete: { Task { await run { try await model.api.removeKpi(id: kpi.id) } } }) {
           Button { tap(kpi) } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: Space.s) {
                 Image(systemName: met ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(met ? Ink.good : Ink.muted)
-                Text(kpi.name).font(.system(.subheadline, design: .rounded))
+                    .contentTransition(.symbolEffect(.replace))
+                    .symbolEffect(.bounce, value: met)
+                VStack(alignment: .leading, spacing: 2) {
+                    if isTop(kpi) {
+                        Label("Wichtigstes heute", systemImage: "exclamationmark.circle.fill")
+                            .font(.caption2.weight(.bold))
+                            .foregroundStyle(met ? Ink.good : Ink.drift)
+                    }
+                    Text(kpi.name).font(isTop(kpi) ? .callout.weight(.semibold) : .callout)
+                }
                 if kpi.source != "manual" {
                     Image(systemName: "heart.fill").font(.caption2).foregroundStyle(Ink.muted).accessibilityLabel("aus der Health-App")
                 }
                 Spacer()
+                Text("+\(points(kpi))")
+                    .font(.caption.weight(.bold).monospacedDigit())
+                    .foregroundStyle(met ? Ink.good : (top ? Ink.drift : Ink.muted))
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 3)
+                    .background((met ? Ink.good : (top ? Ink.drift : Ink.muted)).opacity(0.14), in: Capsule())
+                    .accessibilityLabel("\(points(kpi)) Punkte")
                 Text(display(kpi, value))
-                    .font(.system(.subheadline, design: .rounded).weight(.medium))
+                    .font(.callout.weight(.medium))
                     .foregroundStyle(met ? Ink.good : Ink.muted)
+                    .contentTransition(.numericText())
             }
-            .frame(minHeight: 44)
+            .frame(minHeight: top ? 56 : 44)
+            .padding(.horizontal, top ? Space.xs : 0)
+            .background(top ? Ink.drift.opacity(0.10) : .clear, in: RoundedRectangle(cornerRadius: Radius.row, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.row, style: .continuous).strokeBorder(top ? Ink.drift : .clear, lineWidth: 2))
+            .padding(.vertical, top ? Space.xxs : 0)
             .contentShape(Rectangle())
-            .overlay(alignment: .top) { Rectangle().fill(Ink.line).frame(height: 1) }
+            .overlay(alignment: .top) { if !top { Rectangle().fill(Ink.line).frame(height: 0.5) } }
+            .animation(Motion.snappy, value: met)
+            .animation(Motion.smooth, value: value)
         }
-          .buttonStyle(.plain)
+          .buttonStyle(RowPress())
           .accessibilityHint(kpi.direction == "check" ? "Antippen zum Abhaken. Nach rechts wischen: erledigt, nach links: löschen." : "Antippen zum Eintragen. Nach rechts wischen: erledigt, nach links: löschen.")
         }
     }
@@ -292,9 +430,10 @@ struct SwipeRow<Content: View>: View {
             }
             .font(.body.weight(.semibold))
             .foregroundStyle(Ink.night)
-            .padding(.horizontal, 16)
+            .padding(.horizontal, Space.page)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(offset > 0 ? Ink.good : offset < 0 ? Ink.drift : .clear, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            // Rectangle: the surrounding card clips the corners.
+            .background(offset > 0 ? Ink.good : offset < 0 ? Ink.drift : .clear)
             content
                 .background(Ink.surface)
                 .offset(x: offset)
@@ -314,7 +453,7 @@ struct SwipeRow<Content: View>: View {
                         Haptics.warning()
                         delete()
                     }
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { offset = 0 }
+                    withAnimation(Motion.snappy) { offset = 0 }
                 }
         )
         .accessibilityAction(named: "Erledigt", done)
@@ -324,7 +463,8 @@ struct SwipeRow<Content: View>: View {
 
 /// The person adds a daily to-do to a life area: just what to do.
 private struct NewKpi: View {
-    let area: Area
+    /** nil: the coach picks the area. */
+    let area: Area?
     /** name, and whether to talk it through with the coach right away. */
     var save: (String, Bool) -> Void
     @State private var name = ""
@@ -334,17 +474,18 @@ private struct NewKpi: View {
 
     var body: some View {
         Screen {
-            VStack(alignment: .leading, spacing: 14) {
-                Eyebrow(area.title)
-                Text("Neues To-do").font(.display(26))
+            VStack(alignment: .leading, spacing: Space.s) {
+                Eyebrow(area?.title ?? "Clara sortiert es ein")
+                Text("Neues To-do").font(.sectionTitle).padding(.bottom, Space.xs)
                 TextField("Was willst du jeden Tag tun?", text: $name)
                     .focused($focused)
                     .submitLabel(.done)
                     .onSubmit { if !cleaned.isEmpty { save(cleaned, false) } }
-                    .font(.system(.body, design: .rounded))
-                    .padding(14)
-                    .background(Ink.surface, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(Ink.line))
+                    .font(.bodyText)
+                    .padding(.horizontal, Space.m)
+                    .frame(minHeight: 52)
+                    .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Ink.line))
                 Button {
                     save(cleaned, true)
                 } label: {
@@ -356,7 +497,9 @@ private struct NewKpi: View {
                     .buttonStyle(PressStyle(filled: false))
                     .disabled(cleaned.isEmpty)
             }
-            .padding(24)
+            .padding(.horizontal, Space.page)
+            .padding(.top, Space.section)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .onAppear { focused = true }
     }
@@ -373,23 +516,26 @@ struct KpiEntry: View {
 
     var body: some View {
         Screen {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: Space.s) {
                 Eyebrow("Heute eintragen")
-                Text(kpi.name).font(.display(26))
-                HStack {
+                Text(kpi.name).font(.sectionTitle).padding(.bottom, Space.xs)
+                HStack(alignment: .firstTextBaseline) {
                     TextField("0", text: $text)
                         .keyboardType(.decimalPad)
                         .focused($focused)
                         .font(.system(size: 34, weight: .bold, design: .rounded))
                     Text(kpi.unit).font(.system(.title3, design: .rounded)).foregroundStyle(Ink.muted)
                 }
-                .padding(16)
-                .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .padding(Space.m)
+                .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.control, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: Radius.control, style: .continuous).strokeBorder(Ink.line))
                 Button("Speichern") { if let parsed { save(parsed) } }
                     .buttonStyle(PressStyle())
                     .disabled(parsed == nil)
             }
-            .padding(24)
+            .padding(.horizontal, Space.page)
+            .padding(.top, Space.section)
+            .frame(maxHeight: .infinity, alignment: .top)
         }
         .onAppear {
             if let value { text = value.formatted(.number.grouping(.never).locale(Locale(identifier: "de_DE"))) }

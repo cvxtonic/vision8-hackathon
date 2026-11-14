@@ -10,52 +10,59 @@ struct WeekFold: View {
     @State private var calendarItem: WeekItem?
 
     private var plan: WeekPlan? { model.state?.week }
+    private var doneCount: Int { plan?.items.filter(\.done).count ?? 0 }
 
     var body: some View {
-        Fold(title: "Diese Woche", subtitle: plan.map { "\($0.items.filter(\.done).count) von \($0.items.count) erledigt" }) {
+        Fold(title: "Diese Woche", subtitle: plan.map { "\(doneCount) von \($0.items.count) erledigt" }) {
             weekContent
         }
         .task { if plan == nil, !busy { await load(fresh: false) } }
         .sheet(item: $calendarItem) { item in
             CalendarSheet(item: item, week: plan?.week).ignoresSafeArea()
         }
+        // Done -> success; undone stays silent.
+        .sensoryFeedback(trigger: doneCount) { old, new in new > old ? .success : nil }
     }
 
     @ViewBuilder
     private var weekContent: some View {
-                                if let plan {
-                        Card {
-                            Eyebrow("Worum es diese Woche geht")
-                            Text(plan.focus).font(.quote)
-                            ProgressView(value: Double(plan.items.filter(\.done).count), total: Double(max(plan.items.count, 1)))
-                                .tint(Ink.good)
-                        }
-                        ForEach(plan.items) { item in
-                            WeekRow(item: item, toggle: { Task { await toggle(item) } }, addToCalendar: { calendarItem = item })
-                        }
-                        if busy {
-                            CoachThinking(text: "Der Coach plant neu")
-                        } else {
-                            Button("Offene To-dos neu planen lassen") { Task { await load(fresh: true) } }
-                                .font(.system(.subheadline, design: .rounded).weight(.semibold))
-                                .foregroundStyle(Ink.muted)
-                                .frame(maxWidth: .infinity, minHeight: 44)
-                        }
-                    } else if busy {
-                        CoachThinking(text: "Dein Coach plant deine Woche")
-                            .padding(.top, 24)
-                    } else {
-                        Text("Dein Coach macht aus deinem Zielvertrag konkrete Schritte für diese Woche.")
-                            .font(.system(.body, design: .rounded))
-                            .foregroundStyle(Ink.muted)
-                        Button("Woche planen lassen") { Task { await load(fresh: false) } }.buttonStyle(PressStyle())
-                    }
-                    if let error { ErrorNote(text: error) }
-    }
-
-    private var weekLabel: String {
-        let cal = Calendar(identifier: .iso8601)
-        return "Kalenderwoche \(cal.component(.weekOfYear, from: .now))"
+        if let plan {
+            Card {
+                Eyebrow("Worum es diese Woche geht")
+                Text(plan.focus).font(.quote).fixedSize(horizontal: false, vertical: true)
+                ProgressView(value: Double(doneCount), total: Double(max(plan.items.count, 1)))
+                    .tint(Ink.good)
+                    .animation(Motion.smooth, value: doneCount)
+            }
+            VStack(spacing: 0) {
+                ForEach(Array(plan.items.enumerated()), id: \.element.id) { index, item in
+                    if index > 0 { Hairline() }
+                    WeekRow(item: item, toggle: { Task { await toggle(item) } }, addToCalendar: { calendarItem = item })
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+            }
+            .background(Ink.surface, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: Radius.card, style: .continuous).strokeBorder(Ink.line))
+            .clipShape(RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
+            if busy {
+                CoachThinking(text: "Der Coach plant neu")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            } else {
+                Button("Offene To-dos neu planen") { Task { await load(fresh: true) } }
+                    .font(.system(.subheadline, design: .rounded).weight(.semibold))
+                    .foregroundStyle(Ink.muted)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+            }
+        } else if busy {
+            CoachThinking(text: "Dein Coach plant deine Woche")
+            ForEach(0..<3, id: \.self) { _ in Skeleton(height: 72) }
+        } else {
+            Text("Dein Coach macht aus deinem Zielvertrag konkrete Schritte für diese Woche.")
+                .font(.bodyText)
+                .foregroundStyle(Ink.muted)
+            Button("Woche planen lassen") { Task { await load(fresh: false) } }.buttonStyle(PressStyle())
+        }
+        if let error { ErrorNote(text: error).transition(.opacity) }
     }
 
     private func load(fresh: Bool) async {
@@ -65,49 +72,65 @@ struct WeekFold: View {
         do {
             let week = try await model.api.week(fresh: fresh)
             Haptics.success()
-            withAnimation { model.state?.week = week }
+            withAnimation(Motion.smooth) { model.state?.week = week }
         } catch {
-            self.error = error.localizedDescription
+            withAnimation(Motion.smooth) { self.error = error.localizedDescription }
         }
     }
 
     private func toggle(_ item: WeekItem) async {
-        Haptics.tap()
         guard let index = plan?.items.firstIndex(where: { $0.id == item.id }) else { return }
-        withAnimation { model.state?.week?.items[index].done.toggle() } // optimistic
+        withAnimation(Motion.snappy) { model.state?.week?.items[index].done.toggle() } // optimistic
         do {
             let week = try await model.api.checkWeek(id: item.id, done: !item.done)
             model.state?.week = week
         } catch {
-            withAnimation { model.state?.week?.items[index].done = item.done }
-            self.error = error.localizedDescription
+            withAnimation(Motion.snappy) { model.state?.week?.items[index].done = item.done }
+            withAnimation(Motion.smooth) { self.error = error.localizedDescription }
         }
     }
 }
 
+/// Hairline between list rows, inset to the text (row padding + check button + gap).
+private struct Hairline: View {
+    var body: some View {
+        Rectangle()
+            .fill(Ink.line)
+            .frame(height: 0.5)
+            .padding(.leading, WeekRow.inset + 44 + Space.s)
+    }
+}
+
 private struct WeekRow: View {
+    /// STYLEGUIDE: list rows 14 horizontal, 12 vertical.
+    static let inset: CGFloat = 14
+
     let item: WeekItem
     var toggle: () -> Void
     var addToCalendar: () -> Void
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Space.s) {
             Button(action: toggle) {
                 Image(systemName: item.done ? "checkmark.circle.fill" : "circle")
                     .font(.title2)
                     .foregroundStyle(item.done ? Ink.good : Ink.muted)
+                    .contentTransition(.symbolEffect(.replace))
                     .frame(minWidth: 44, minHeight: 44, alignment: .top)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .accessibilityLabel(item.done ? "Erledigt, antippen zum Zurücksetzen" : "Als erledigt markieren")
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.xxs) {
                 Text(item.title)
-                    .font(.system(.body, design: .rounded).weight(.medium))
+                    .font(.bodyText.weight(.medium))
                     .strikethrough(item.done, color: Ink.muted)
+                    .foregroundStyle(item.done ? Ink.muted : Ink.paper)
                 Text(item.why)
-                    .font(.system(.footnote, design: .rounded))
+                    .font(.note)
                     .foregroundStyle(Ink.muted)
-                HStack(spacing: 10) {
+                    .fixedSize(horizontal: false, vertical: true)
+                HStack(spacing: Space.s) {
                     Label("\(item.day) · \(item.minutes) Min.", systemImage: "clock")
                     Spacer()
                     Button(action: addToCalendar) {
@@ -120,10 +143,9 @@ private struct WeekRow: View {
                 .foregroundStyle(Ink.muted)
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.top, 10)
-        .background(Ink.surface, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).strokeBorder(Ink.line))
+        .padding(.horizontal, Self.inset)
+        .padding(.top, Space.s)
+        .frame(minHeight: 44)
     }
 }
 
@@ -183,23 +205,35 @@ struct TalkView: View {
     @Environment(AppModel.self) private var model
 
     var body: some View {
+        let active = model.call.active
         Screen {
-            VStack(spacing: 28) {
+            VStack(spacing: Space.section) {
                 Spacer()
                 Button {
                     Haptics.tap()
                     Task { await model.call.start(model.api, focus: "help") }
                 } label: {
-                    CoachOrb()
+                    CoachOrb(active: active)
                 }
                 .buttonStyle(OrbPress())
-                .accessibilityLabel("Mit deinem Coach sprechen")
-                Text(model.call.active ? "Dein Coach hört zu. Du kannst die App weiter nutzen." : "Antippen und losreden")
+                .accessibilityLabel("Mit Clara sprechen, deinem KI-Coach")
+                .appear(0)
+                Text("Clara · dein KI-Coach")
+                    .font(.note.weight(.semibold))
+                    .foregroundStyle(Ink.dawn)
+                Text(active ? "Clara hört zu. Du kannst die App weiter nutzen." : "Antippen und mit Clara reden")
                     .font(.system(.subheadline, design: .rounded))
                     .foregroundStyle(Ink.muted)
+                    .multilineTextAlignment(.center)
+                    .id(active)
+                    .transition(.opacity)
+                    .appear(1)
                 Spacer()
+                Spacer() // sits the orb a little above centre, clear of the coach bar
             }
+            .padding(.horizontal, Space.page)
             .frame(maxWidth: .infinity)
+            .animation(Motion.smooth, value: active)
         }
     }
 }
@@ -212,16 +246,20 @@ struct Fold<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.s) {
             Button {
                 Haptics.tap()
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.85)) { open.toggle() }
+                withAnimation(Motion.snappy) { open.toggle() }
             } label: {
                 HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(title).font(.display(22))
+                    VStack(alignment: .leading, spacing: Space.xxs) {
+                        Text(title).font(.sectionTitle)
                         if let subtitle {
-                            Text(subtitle).font(.system(.footnote, design: .rounded)).foregroundStyle(Ink.muted)
+                            Text(subtitle)
+                                .font(.note)
+                                .foregroundStyle(Ink.muted)
+                                .contentTransition(.numericText())
+                                .animation(Motion.smooth, value: subtitle)
                         }
                     }
                     Spacer()
@@ -233,22 +271,21 @@ struct Fold<Content: View>: View {
                 .frame(minHeight: 52)
                 .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(RowPress())
+            .accessibilityAddTraits(.isHeader)
             .accessibilityHint(open ? "Einklappen" : "Aufklappen")
             if open {
-                VStack(alignment: .leading, spacing: 12) { content }
-                    .transition(.opacity)
+                VStack(alignment: .leading, spacing: Space.s) { content }
+                    .transition(.opacity.combined(with: .move(edge: .top)))
             }
         }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
-        .background(Ink.surface.opacity(0.5), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).strokeBorder(Ink.line))
     }
 }
 
-/// A slowly breathing, turning orb in the app's dawn colours.
+/// A slowly breathing, turning orb in the app's dawn colours. While a talk runs it grows a little
+/// and soft rings ripple outwards.
 private struct CoachOrb: View {
+    var active = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -262,6 +299,15 @@ private struct CoachOrb: View {
                     .frame(width: 260, height: 260)
                     .scaleEffect(1 + 0.06 * sin(t * 1.3 + 0.8))
                     .blur(radius: 30)
+                // Ripples while talking: two rings, half a period apart.
+                ForEach(0..<2, id: \.self) { i in
+                    let p = (t / 2.6 + Double(i) * 0.5).truncatingRemainder(dividingBy: 1)
+                    Circle()
+                        .strokeBorder(Ink.dawn.opacity(0.45 * (1 - p)), lineWidth: 1.5)
+                        .frame(width: 200, height: 200)
+                        .scaleEffect(1 + 0.32 * p)
+                }
+                .opacity(active ? 1 : 0)
                 // Body: a turning angular gradient, softened.
                 Circle()
                     .fill(
@@ -287,6 +333,8 @@ private struct CoachOrb: View {
             .scaleEffect(breath)
             .compositingGroup()
         }
+        .scaleEffect(active ? 1.05 : 1)
+        .animation(Motion.gentle, value: active)
         .frame(width: 280, height: 280)
     }
 }
@@ -295,6 +343,6 @@ private struct OrbPress: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.94 : 1)
-            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: configuration.isPressed)
+            .animation(Motion.snappy, value: configuration.isPressed)
     }
 }

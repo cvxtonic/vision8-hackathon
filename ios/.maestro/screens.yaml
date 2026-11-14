@@ -1,0 +1,22 @@
+# Screenshots of the four tabs for a design review (keeps the current account).
+appId: ai.innofy.vision8
+---
+- launchApp
+- extendedWaitUntil:
+    visible: "Heute"
+    timeout: 20000
+- waitForAnimationToEnd
+- takeScreenshot: build/shots/s-heute
+- tapOn: "Coach"
+- waitForAnimationToEnd
+- takeScreenshot: build/shots/s-coach
+- tapOn: "Vision"
+- extendedWaitUntil:
+    visible: "DEIN WEG DORTHIN"
+    timeout: 15000
+    optional: true
+- waitForAnimationToEnd
+- takeScreenshot: build/shots/s-vision
+- tapOn: "Profil"
+- waitForAnimationToEnd
+- takeScreenshot: build/shots/s-profil

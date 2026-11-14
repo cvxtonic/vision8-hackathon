@@ -33,6 +33,7 @@ iOS-App (SwiftUI)  ──HTTPS──▶  Worker (Cloudflare Workers, Hono, Zod, 
 | `ios/` | SwiftUI-App (iOS 17+), Projekt per [XcodeGen](https://github.com/yonaskolb/XcodeGen). Echtzeit-Audio mit `AVAudioEngine` und Echounterdrückung, HealthKit (Schritte, Gewicht), Kalender-Eintrag über EventKit. |
 | `worker/` | Backend als Cloudflare Worker: Erstgespräch, Zielvertrag, Tagesliste, Score und Streak, Akte, Vision Board, Abend-Anruf (Cron). Datenbank: Cloudflare D1 (EU-Jurisdiktion). |
 | `README.md` / `README.de.md`, `STYLEGUIDE.md` / `STYLEGUIDE.de.md` | Dokumentation auf Englisch und Deutsch. |
+| `pitch/` | Pitch-Präsentation und Demo-Ablauf, auf Englisch und Deutsch. |
 | `voice/agents/` | Die vier Sprach-Coaches als Daten: Kennenlerngespräch, Vertragsanpassung, Folgegespräch und Abend-Anruf (Prompt, Modell, Stimme, Werkzeuge). Sie laufen in einem separaten Echtzeit-Sprachdienst, der nicht Teil dieses Repos ist. |
 
 ### Schnittstelle zum Echtzeit-Sprachdienst

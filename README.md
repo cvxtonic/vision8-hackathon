@@ -34,6 +34,7 @@ iOS app (SwiftUI)  ──HTTPS──▶  Worker (Cloudflare Workers, Hono, Zod, 
 | `worker/` | Backend as a Cloudflare Worker: intake, goal contract, day ranking with score points, score and streak, file, vision board, evening call (cron). Database: Cloudflare D1 (EU jurisdiction). |
 | `voice/agents/` | The four voice coaches as data: intake, contract revision, follow-up and evening call (prompt, model, voice, tools). They run in a separate real-time voice service that is not part of this repository. The prompts are in German, because the app speaks German. |
 | `README.md` / `README.de.md`, `STYLEGUIDE.md` / `STYLEGUIDE.de.md` | Documentation in English and German. |
+| `pitch/` | Pitch deck and demo script, in English and German. |
 
 ### Interface to the real-time voice service
 

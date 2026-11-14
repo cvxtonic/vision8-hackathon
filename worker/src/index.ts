@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { Context } from "hono";
 import { z } from "zod";
 
 import {
@@ -119,13 +120,19 @@ app.use("/v1/*", async (c, next) => {
 });
 
 /** Per-device daily cap on model calls; the gateway key budget is the hard limit behind it. */
-async function meter(env: Env, device: string): Promise<void> {
-  const row = await env.DB.prepare(
-    "INSERT INTO usage (device_id, day, n) VALUES (?, ?, 1) ON CONFLICT (device_id, day) DO UPDATE SET n = n + 1 RETURNING n",
-  )
-    .bind(device, berlinDay(new Date()))
-    .first<{ n: number }>();
-  if ((row?.n ?? 0) > Number(env.MAX_LLM_CALLS_PER_DAY)) throw new HttpError(429, "Für heute ist das Coach-Kontingent aufgebraucht.");
+async function meter(c: Context<{ Bindings: Env; Variables: Vars }>): Promise<void> {
+  const env = c.env;
+  const day = berlinDay(new Date());
+  const count = (key: string) =>
+    env.DB.prepare("INSERT INTO usage (device_id, day, n) VALUES (?, ?, 1) ON CONFLICT (device_id, day) DO UPDATE SET n = n + 1 RETURNING n")
+      .bind(key, day)
+      .first<{ n: number }>();
+  if (((await count(c.var.device))?.n ?? 0) > Number(env.MAX_LLM_CALLS_PER_DAY)) throw new HttpError(429, "Für heute ist das Coach-Kontingent aufgebraucht.");
+  // The device id is chosen by the client: one network address and the whole service are capped as well.
+  if (((await count(`ip:${c.req.header("cf-connecting-ip") ?? "unknown"}`))?.n ?? 0) > Number(env.MAX_LLM_CALLS_PER_IP_PER_DAY)) {
+    throw new HttpError(429, "Von diesem Anschluss kamen heute schon sehr viele Anfragen. Morgen geht es weiter.");
+  }
+  if (((await count("*"))?.n ?? 0) > Number(env.MAX_LLM_CALLS_GLOBAL_PER_DAY)) throw new HttpError(429, "Der Coach ist für heute ausgelastet. Morgen geht es weiter.");
 }
 
 async function nameOf(env: Env, device: string): Promise<string | null> {
@@ -185,7 +192,7 @@ const InterviewBody = z.object({ area: z.enum(AREAS), turns: z.array(TurnSchema)
 app.post("/v1/interview/next", async (c) => {
   const { area, turns, voice } = InterviewBody.parse(await c.req.json());
   if (turns.length >= MAX_TURNS) return c.json(QuestionSchema.parse({ done: true, phase: "ziel" }));
-  await meter(c.env, c.var.device);
+  await meter(c);
   const name = await nameOf(c.env, c.var.device);
   let q = await ask(c.env, QuestionSchema, interviewPrompt(area, turns, voice, name));
   // Too early to finish: the draft would lack the SMART answers. Ask once more for a question.
@@ -205,7 +212,7 @@ app.post("/v1/draft", async (c) => {
   // A spoken conversation has more, shorter turns than the typed interview.
   // `previous` + `feedback`: revise an existing draft (feedback is typed, or the transcript of the revise talk).
   const body = InterviewBody.extend({ turns: z.array(TurnSchema).max(MAX_SPOKEN_TURNS), feedback: z.string().max(8000).optional(), previous: DraftSchema.optional() }).parse(await c.req.json());
-  await meter(c.env, c.var.device);
+  await meter(c);
   return c.json(await ask(c.env, DraftSchema, draftPrompt(body.area, body.turns, berlinDay(new Date()), body.feedback, await nameOf(c.env, c.var.device), body.previous)));
 });
 
@@ -292,9 +299,10 @@ app.post("/v1/voice/debrief", async (c) => {
   const { turns } = z.object({ turns: z.array(TurnSchema).min(1).max(MAX_SPOKEN_TURNS) }).parse(await c.req.json());
   const device = c.var.device;
   const { draft, name, file } = await loadDraft(c.env, device);
-  // The conversation goes into the file first: it must not be lost when the summary below fails.
+  // Metered before anything runs; the file update counts as part of this call. It is scheduled before the summary,
+  // so the conversation is kept even when the summary fails.
+  await meter(c);
   c.executionCtx.waitUntil(updateFile(c.env, device, "Folgegespräch", transcript(turns)));
-  await meter(c.env, device);
   const { summary, insight } = await ask(c.env, DebriefSchema, debriefPrompt(draft, turns, name, file));
   const talk: Talk = { summary, insight, at: new Date().toISOString() };
   await c.env.DB.prepare("UPDATE users SET last_talk_json = ? WHERE device_id = ?").bind(JSON.stringify(talk), device).run();
@@ -417,7 +425,7 @@ async function todayPlan(env: Env, device: string): Promise<DayPlan> {
 app.post("/v1/day/plan", async (c) => {
   const { tasks } = z.object({ tasks: z.array(z.string().trim().min(1).max(200)).min(1).max(12) }).parse(await c.req.json());
   const { draft, name, file } = await loadDraft(c.env, c.var.device);
-  await meter(c.env, c.var.device);
+  await meter(c);
   const kpiText = await kpiStatus(c.env, c.var.device);
   // The daily KPIs ride along with the file so the plan check can point at the ones still open.
   const withKpis = kpiText ? `${file ?? ""}\n\nTägliche To-dos, Stand jetzt:\n${kpiText}` : file;
@@ -480,7 +488,7 @@ app.post("/v1/kpis/setup", async (c) => {
   const existing = await loadKpis(c.env, c.var.device);
   if (existing.length && !fresh) return c.json({ kpis: existing });
   await loadDraft(c.env, c.var.device); // 409 without a contract
-  await meter(c.env, c.var.device);
+  await meter(c);
   const kpis = await setupKpis(c.env, c.var.device, "");
   if (!kpis.length) throw new Error("kpi setup failed");
   return c.json({ kpis });
@@ -509,7 +517,7 @@ app.post("/v1/kpis/add", async (c) => {
 app.post("/v1/kpis/suggest", async (c) => {
   const { area } = z.object({ area: z.enum(AREAS) }).parse(await c.req.json());
   const { draft, name, file } = await loadDraft(c.env, c.var.device);
-  await meter(c.env, c.var.device);
+  await meter(c);
   const userArea = (await c.env.DB.prepare("SELECT area FROM users WHERE device_id = ?").bind(c.var.device).first<{ area: string | null }>())?.area ?? area;
   const made = await ask(c.env, KpiSetSchema, kpiPrompt(draft, userArea, "", name, file, area));
   const kpis = await loadKpis(c.env, c.var.device);
@@ -547,7 +555,7 @@ app.post("/v1/vision/board", async (c) => {
     throw new HttpError(429, "Von diesem Anschluss wurden heute schon viele Bilder erzeugt. Morgen wieder.");
   }
   if (!(await take("img:*", env.MAX_BOARDS_GLOBAL_PER_DAY))) throw new HttpError(429, "Heute sind keine Bilder mehr frei. Morgen wieder.");
-  await meter(env, device);
+  await meter(c);
   const scene = await ask(env, SceneSchema, scenePrompt(draft));
   const res = await fetch("https://fal.run/fal-ai/gpt-image-2", {
     method: "POST",
@@ -663,7 +671,7 @@ app.post("/v1/today/list", async (c) => {
   const existing = await loadList(env, device, today);
   if (existing && !fresh) return c.json({ items: existing });
   const { draft, name, file } = await loadDraft(env, device);
-  await meter(env, device);
+  await meter(c);
   const kpis = (await loadKpis(env, device)).filter((k) => k.source === "manual");
   const yesterday = new Date(`${today}T12:00:00Z`);
   yesterday.setUTCDate(yesterday.getUTCDate() - 1);
@@ -689,7 +697,7 @@ app.post("/v1/today/add", async (c) => {
   const env = c.env;
   const device = c.var.device;
   const { draft, file } = await loadDraft(env, device);
-  await meter(env, device);
+  await meter(c);
   const sorted = await ask(env, SortSchema, sortPrompt(draft, title, file));
   const list = (await loadList(env, device, berlinDay(new Date()))) ?? [];
   const item: ListItem = { id: crypto.randomUUID(), title, why: sorted.why, quadrant: sorted.quadrant === "drop" ? "later" : sorted.quadrant, source: "own", done: false };
@@ -795,7 +803,7 @@ app.post("/v1/week/plan", async (c) => {
   const existing = await loadWeek(c.env, device, week);
   if (existing && !fresh) return c.json(existing);
   const { draft, name, file } = await loadDraft(c.env, device);
-  await meter(c.env, device);
+  await meter(c);
   const prevMonday = new Date(`${week}T12:00:00Z`);
   prevMonday.setUTCDate(prevMonday.getUTCDate() - 7);
   const previous = await loadWeek(c.env, device, prevMonday.toISOString().slice(0, 10));
@@ -844,7 +852,7 @@ app.post("/v1/day/reflect", async (c) => {
   const causeOf = new Map(body.causes.map((x) => [x.index, x.cause]));
   const open = plan.tasks.some((t) => !t.done);
   if (!body.text && open && causeOf.size === 0) throw new HttpError(400, "Sag kurz, woran es bei den offenen Aufgaben lag.");
-  await meter(c.env, device);
+  await meter(c);
   const today = berlinDay(new Date());
   const earlier = await c.env.DB.prepare("SELECT reflection_json FROM days WHERE device_id = ? AND day < ? AND reflection_json IS NOT NULL ORDER BY day DESC LIMIT 7")
     .bind(device, today)
@@ -873,7 +881,7 @@ app.post("/v1/goals/change", async (c) => {
   const now = new Date();
   const blocked = changeBlocked(history.results, now);
   if (blocked) throw new HttpError(409, blocked);
-  await meter(c.env, device);
+  await meter(c);
   const { reply } = await ask(c.env, ReplySchema, changePrompt(draft, goal.title, body.proposed, body.reason));
   const row = { id: crypto.randomUUID(), goal_id: goal.id, proposed: body.proposed, coach_reply: reply, effective_at: coolingOffEnd(now) };
   await c.env.DB.prepare("INSERT INTO change_requests (id, device_id, goal_id, reason, proposed, coach_reply, created_at, effective_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")

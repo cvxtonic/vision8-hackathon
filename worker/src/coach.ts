@@ -9,6 +9,8 @@ export type Env = {
   LITELLM_KEY: string;
   APP_KEY: string;
   MAX_LLM_CALLS_PER_DAY: string;
+  MAX_LLM_CALLS_PER_IP_PER_DAY: string;
+  MAX_LLM_CALLS_GLOBAL_PER_DAY: string;
   VOICE_KIT_URL: string;
   VOICE_AGENT: string;
   VOICE_KIT_KEY: string;

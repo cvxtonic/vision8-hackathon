@@ -13,6 +13,8 @@
     "LLM_BASE": "https://your-openai-compatible-gateway.example",
     "LLM_ALIAS": "your-eu-model-alias",
     "MAX_LLM_CALLS_PER_DAY": "120",
+    "MAX_LLM_CALLS_PER_IP_PER_DAY": "400",
+    "MAX_LLM_CALLS_GLOBAL_PER_DAY": "4000",
     "VOICE_KIT_URL": "https://your-voice-service.example",
     "VOICE_AGENT": "vision8-coach",
     "MAX_CALLS_PER_DAY": "3",

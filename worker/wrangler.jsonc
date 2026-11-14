@@ -1,0 +1,35 @@
+{
+  "$schema": "https://unpkg.com/wrangler@latest/config-schema.json",
+  // Vision 8 coach API for the iOS app. D1 lives in the EU jurisdiction; the model runs on the EU gateway alias.
+  "name": "vision8-api",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-05-01",
+  "workers_dev": true,
+  "observability": { "enabled": true, "head_sampling_rate": 1 },
+  "d1_databases": [
+    { "binding": "DB", "database_name": "vision8", "database_id": "<your-d1-database-id>", "migrations_dir": "migrations" }
+  ],
+  "vars": {
+    "LLM_BASE": "https://your-openai-compatible-gateway.example",
+    "LLM_ALIAS": "your-eu-model-alias",
+    "MAX_LLM_CALLS_PER_DAY": "120",
+    "VOICE_KIT_URL": "https://your-voice-service.example",
+    "VOICE_AGENT": "vision8-coach",
+    "MAX_CALLS_PER_DAY": "3",
+    "MAX_CALLS_GLOBAL_PER_DAY": "40",
+    "VOICE_INTAKE_AGENT": "vision8-intake",
+    "VOICE_FOLLOWUP_AGENT": "vision8-followup",
+    "VOICE_REVISE_AGENT": "vision8-revise",
+    "MAX_VOICE_SESSIONS_PER_DAY": "6",
+    "MAX_VOICE_SESSIONS_PER_IP_PER_DAY": "20",
+    "MAX_VOICE_SESSIONS_GLOBAL_PER_DAY": "80",
+    "MAX_BOARDS_PER_DAY": "4",
+    "MAX_BOARDS_PER_IP_PER_DAY": "12",
+    "MAX_BOARDS_GLOBAL_PER_DAY": "60"
+  },
+  // Evening call: the cron checks every 15 minutes who is due in their chosen Berlin hour.
+  "triggers": { "crons": ["*/15 * * * *"] }
+  // secrets (wrangler secret put): LITELLM_KEY (gateway key), APP_KEY (shared app key), VOICE_KIT_KEY, VOICE_WEBHOOK_KEY,
+  //   CALL_ALLOWLIST (comma-separated E.164 numbers the coach may dial), FAL_KEY (vision board images)
+  //   CALL_ALLOWLIST (comma-separated E.164 numbers the coach may dial; unset = no calls), VOICE_KIT_KEY (voice-kit OUTBOUND_API_KEY), VOICE_WEBHOOK_KEY (same value as voice-kit VISION8_API_KEY; unset = /internal/call-result rejects everything)
+}

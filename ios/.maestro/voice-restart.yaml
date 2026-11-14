@@ -1,0 +1,32 @@
+# Realtime conversation without anyone speaking, then back to typing and a restart to the first screen.
+# Checks that connecting ends in the live state or in the failure note (voice endpoint down, no network) without a crash,
+# and that the way back to the typed interview works.
+appId: ai.innofy.vision8
+---
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: allow
+- tapOn: "Erstgespräch starten"
+- tapOn: "Dein Vorname"
+- inputText: "Mia"
+- pressKey: Enter
+- tapOn: "Gesundheit"
+- tapOn: "Im Gespräch"
+- extendedWaitUntil:
+    visible: "Der Coach hört zu|Der Coach spricht|Noch einmal verbinden"
+    timeout: 30000
+# Stay connected long enough for the coach to start speaking and the client to report its audio state.
+- extendedWaitUntil:
+    visible: "Der Coach spricht"
+    timeout: 20000
+- takeScreenshot: build/shots/live
+- tapOn: "Lieber tippen"
+- extendedWaitUntil:
+    visible: "Im Gespräch weiter"
+    timeout: 60000
+- tapOn: "Von vorn beginnen"
+- tapOn:
+    text: "Von vorn beginnen"
+    below: ".*gehen verloren.*"
+- assertVisible: "Erstgespräch starten"

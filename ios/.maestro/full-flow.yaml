@@ -1,0 +1,105 @@
+# Whole first-run path against the live coach API: interview -> contract -> day plan -> goals -> delete data.
+# Run on the Mac: maestro test .maestro/full-flow.yaml   (simulator booted, app installed)
+appId: ai.innofy.vision8
+---
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: allow
+- tapOn: "Erstgespräch starten"
+- tapOn: "Dein Vorname"
+- inputText: "Mia"
+- pressKey: Enter
+- tapOn: "Karriere"
+- tapOn: "Lieber antippen und tippen"
+- repeat:
+    while:
+      notVisible: "DEIN ZIELVERTRAG"
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: "answer-field"
+          commands:
+            - tapOn:
+                id: "answer-field"
+            - inputText: "Ich bin 31 und im Vertrieb angestellt. Ich rede seit zwei Jahren von einer eigenen Beratung. Mir sind Freiheit und Zeit mit meiner Tochter wichtig. In zehn Jahren habe ich ein Team von fuenf Leuten. In zwoelf Monaten will ich drei zahlende Kunden und 2000 Euro Zusatzumsatz, mit sechs Stunden pro Woche."
+            - tapOn: "Antwort senden"
+      - runFlow:
+          when:
+            visible: "Gänsehaut"
+          commands:
+            - tapOn: "9"
+      - runFlow:
+          when:
+            visible:
+              id: "choice-0"
+          commands:
+            - tapOn:
+                id: "choice-0"
+      - takeScreenshot: build/shots/interview
+- takeScreenshot: build/shots/contract
+# Talking about the draft: the contract stays visible under the conversation.
+- scrollUntilVisible:
+    element: "Passt noch nicht ganz"
+    direction: DOWN
+- tapOn: "Passt noch nicht ganz"
+- extendedWaitUntil:
+    visible: "Der Coach hört zu|Der Coach spricht|Noch einmal verbinden"
+    timeout: 30000
+- assertVisible: "DEIN ZIELVERTRAG"
+- takeScreenshot: build/shots/revise
+- tapOn: "Abbrechen"
+- scrollUntilVisible:
+    element: "Zielvertrag unterschreiben"
+    direction: DOWN
+- longPressOn: "Zielvertrag unterschreiben"
+- extendedWaitUntil:
+    visible: "Was nimmst du dir heute vor?"
+    timeout: 30000
+- tapOn: "Aufgabe 1"
+- inputText: "Drei Wunschkunden auf LinkedIn anschreiben"
+- pressKey: Enter
+- inputText: "Waesche waschen"
+- pressKey: Enter
+- inputText: "Zwei Stunden Netflix"
+- pressKey: Enter
+- tapOn: "Vom Coach prüfen lassen"
+- extendedWaitUntil:
+    visible: "ZAHLT DEIN TAG EIN?"
+    timeout: 60000
+- takeScreenshot: build/shots/today
+- tapOn: "Drei Wunschkunden auf LinkedIn anschreiben"
+- scrollUntilVisible:
+    element: "VORSCHLAG VOM COACH"
+    direction: DOWN
+- takeScreenshot: build/shots/today-checked
+- scrollUntilVisible:
+    element: "Rechenschaft ablegen"
+    direction: DOWN
+- tapOn:
+    text: "Keine Zeit"
+    index: 0
+- tapOn:
+    text: "Keine Energie"
+    index: 1
+- takeScreenshot: build/shots/reasons
+- tapOn: "Rechenschaft ablegen"
+- extendedWaitUntil:
+    visible: "DIE URSACHE"
+    timeout: 60000
+- takeScreenshot: build/shots/reflection
+- scrollUntilVisible:
+    element: "SO RÄUMST DU SIE MORGEN AUS DEM WEG"
+    direction: DOWN
+- takeScreenshot: build/shots/reflection-done
+- tapOn: "Ziele"
+- assertVisible: "Änderung beantragen"
+- takeScreenshot: build/shots/goals
+- tapOn: "Coach"
+- scrollUntilVisible:
+    element: "Alle meine Daten löschen"
+    direction: DOWN
+- tapOn: "Alle meine Daten löschen"
+- tapOn: "Alles löschen"
+- assertVisible: "Erstgespräch starten"

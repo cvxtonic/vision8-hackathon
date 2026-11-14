@@ -1,0 +1,83 @@
+# Typed first run up to the signed contract, then the Coach tab: file screen and a follow-up conversation
+# (live or the failure note, nobody speaks), finally delete all data.
+# Run on the Mac: maestro test .maestro/coach-tab.yaml   (simulator booted, app installed)
+appId: ai.innofy.vision8
+---
+- launchApp:
+    clearState: true
+    permissions:
+      microphone: allow
+- tapOn: "Erstgespräch starten"
+- tapOn: "Dein Vorname"
+- inputText: "Mia"
+- pressKey: Enter
+- tapOn: "Karriere"
+- tapOn: "Lieber antippen und tippen"
+- repeat:
+    while:
+      notVisible: "DEIN ZIELVERTRAG"
+    commands:
+      - runFlow:
+          when:
+            visible:
+              id: "answer-field"
+          commands:
+            - tapOn:
+                id: "answer-field"
+            - inputText: "Ich bin 31 und im Vertrieb angestellt. Ich rede seit zwei Jahren von einer eigenen Beratung. Mir sind Freiheit und Zeit mit meiner Tochter wichtig. In zehn Jahren habe ich ein Team von fuenf Leuten. In zwoelf Monaten will ich drei zahlende Kunden und 2000 Euro Zusatzumsatz, mit sechs Stunden pro Woche."
+            - tapOn: "Antwort senden"
+      - runFlow:
+          when:
+            visible: "Gänsehaut"
+          commands:
+            - tapOn: "9"
+      - runFlow:
+          when:
+            visible:
+              id: "choice-0"
+          commands:
+            - tapOn:
+                id: "choice-0"
+      - takeScreenshot: build/shots/coach-interview
+- takeScreenshot: build/shots/coach-contract
+- scrollUntilVisible:
+    element: "Zielvertrag unterschreiben"
+    direction: DOWN
+- longPressOn: "Zielvertrag unterschreiben"
+- extendedWaitUntil:
+    visible: "Was nimmst du dir heute vor?"
+    timeout: 30000
+- tapOn: "Coach"
+- assertVisible: "Gespräch mit deinem Coach"
+- assertVisible: "Deine Akte.*"
+- takeScreenshot: build/shots/coach-tab
+- tapOn: "Deine Akte.*"
+- extendedWaitUntil:
+    visible: "Dein Coach legt deine Akte gerade an.|AUSGANGSLAGE|WERTE|GLAUBENSSÄTZE"
+    timeout: 10000
+- takeScreenshot: build/shots/coach-file
+- tapOn: "Schließen"
+- tapOn: "Gespräch starten"
+- extendedWaitUntil:
+    visible: "Der Coach hört zu|Der Coach spricht|Noch einmal verbinden"
+    timeout: 30000
+- takeScreenshot: build/shots/coach-followup
+- runFlow:
+    when:
+      visible: "Noch einmal verbinden"
+    commands:
+      - tapOn: "Schließen"
+- runFlow:
+    when:
+      visible: "Gespräch beenden"
+    commands:
+      - tapOn: "Gespräch beenden"
+- extendedWaitUntil:
+    visible: "Deine Akte.*"
+    timeout: 10000
+- scrollUntilVisible:
+    element: "Alle meine Daten löschen"
+    direction: DOWN
+- tapOn: "Alle meine Daten löschen"
+- tapOn: "Alles löschen"
+- assertVisible: "Erstgespräch starten"

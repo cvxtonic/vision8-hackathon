@@ -1,0 +1,40 @@
+name: Vision8
+options:
+  bundleIdPrefix: ai.innofy
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    DEVELOPMENT_TEAM: "" # your Apple team id
+    SWIFT_VERSION: "5.0"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+targets:
+  Vision8:
+    type: application
+    platform: iOS
+    sources:
+      - path: Vision8
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: ai.innofy.vision8
+        PRODUCT_NAME: Vision 8
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: Vision 8
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+        INFOPLIST_KEY_NSHealthShareUsageDescription: Damit dein Coach deine Schritte und dein Gewicht als tägliche Kennzahlen sieht, ohne dass du sie abtippen musst.
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: Vision 8 schreibt nichts in die Health-App. Es liest nur Schritte und Gewicht für deine täglichen To-dos.
+        CODE_SIGN_ENTITLEMENTS: Vision8/Vision8.entitlements
+        INFOPLIST_KEY_NSMicrophoneUsageDescription: Damit du dem Coach deine Antworten sagen kannst, statt sie zu tippen.
+        INFOPLIST_KEY_NSSpeechRecognitionUsageDescription: Deine gesprochenen Antworten werden in Text umgewandelt, damit der Coach darauf eingehen kann.
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1"
+        CODE_SIGN_STYLE: Automatic
+schemes:
+  Vision8:
+    build:
+      targets:
+        Vision8: all

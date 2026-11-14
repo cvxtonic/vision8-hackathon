@@ -1,55 +1,57 @@
 # Vision 8 – Style Guide
 
-Ruhig, warm, hochwertig. Die App fühlt sich an wie ein persönlicher Coach in einem stillen Raum am frühen Morgen: dunkler Grund, warmes Licht, wenig gleichzeitig, jede Bewegung mit Absicht.
+🇬🇧 English · 🇩🇪 [Deutsch](STYLEGUIDE.de.md)
 
-## Farbe (`Ink`)
-| Token | Verwendung |
+Calm, warm, high quality. The app feels like a personal coach in a quiet room early in the morning: a dark background, warm light, little at a time, every movement on purpose.
+
+## Colour (`Ink`)
+| Token | Use |
 |---|---|
-| `night` | Hintergrund aller Seiten |
-| `surface` | Karten, Listen, Eingabefelder |
-| `line` | Haarlinien, Kartenränder |
+| `night` | Background of all pages |
+| `surface` | Cards, lists, input fields |
+| `line` | Hairlines, card borders |
 | `paper` | Text |
-| `muted` | Nebentext, Hinweise, inaktive Symbole |
-| `dawn` | Akzent: ein Hauptknopf pro Ansicht, Eyebrows, Fortschritt |
-| `good` | erledigt, erreicht |
-| `drift` | Fehler, Löschen, Auflegen |
+| `muted` | Secondary text, hints, inactive symbols |
+| `dawn` | Accent: one main button per view, eyebrows, progress |
+| `good` | Done, reached |
+| `drift` | Errors, delete, hang up, the most important to-do of the day |
 
-Pro Ansicht höchstens ein gefüllter `dawn`-Knopf. Farbe trägt Bedeutung, nie Dekoration.
+At most one filled `dawn` button per view. Colour carries meaning, never decoration.
 
-## Schrift
-| Rolle | Token | Einsatz |
+## Type
+| Role | Token | Use |
 |---|---|---|
-| Seitentitel | `.pageTitle` (Serif 34) | „Hallo Mia“, „Vision“, „Profil“ |
-| Abschnitt | `.sectionTitle` (Serif 22) | „Zuerst“, „Dein Weg dorthin“ |
-| Kartentitel | `.cardTitle` (Rounded Headline) | Titel innerhalb einer Karte |
-| Text | `.bodyText` | Listeneinträge, Fließtext |
-| Nebentext | `.callout` / `.note` | Begründungen, Hinweise |
-| Eyebrow | `Eyebrow` (Caption, Versalien, Sperrung) | Kontext über Titeln |
-| Zitat | `.quote` (Serif kursiv) | Warum, Coach-Sätze |
+| Page title | `.pageTitle` (serif 34) | "Hallo Mia", "Vision", "Profil" |
+| Section | `.sectionTitle` (serif 22) | "Deine Bereiche", "Dein Weg dorthin" |
+| Card title | `.cardTitle` (rounded headline) | Title inside a card |
+| Text | `.bodyText` | List entries, running text |
+| Secondary text | `.callout` / `.note` | Reasons, hints |
+| Eyebrow | `Eyebrow` (caption, capitals, letter spacing) | Context above titles |
+| Quote | `.quote` (serif italic) | The why, coach sentences |
 
-Serif = Stimme (Titel, Vision, Coach). Rounded = Bedienung.
+Serif = voice (titles, vision, coach). Rounded = controls.
 
-## Abstände (`Space`)
-- Seitenrand links/rechts: `page` (20) – überall gleich.
-- Zwischen Abschnitten: `section` (28). Innerhalb eines Abschnitts: `s` (12). Titel zu Inhalt: `xs` (8).
-- Karten-Innenabstand: `page` (20). Listenzeilen: 14 horizontal, 12 vertikal, mindestens 44 pt hoch.
-- Seiten nutzen `Page { … }` für den gemeinsamen Rhythmus.
+## Spacing (`Space`)
+- Page margin left and right: `page` (20), the same everywhere.
+- Between sections: `section` (28). Inside a section: `s` (12). Title to content: `xs` (8).
+- Card padding: `page` (20). List rows: 14 horizontal, 12 vertical, at least 44 pt high.
+- Pages use `Page { … }` for the shared rhythm.
 
-## Formen (`Radius`)
-Karte 22, Bedienelement 16, Listenzeile 14, Chips als Kapsel. Immer `.continuous`.
+## Shapes (`Radius`)
+Card 22, control 16, list row 14, chips as capsules. Always `.continuous`.
 
-## Bewegung (`Motion`)
-- `snappy` – Tippen, Abhaken, Umschalten.
-- `smooth` – Inhalte, die sich ändern (Listen, Texte).
-- `gentle` – Erscheinen von Seiten und Karten; `.appear(index)` lässt Abschnitte nacheinander einblenden.
-- Nur auf Handlung animieren, nie zum Angeben. „Bewegung reduzieren“ wird respektiert.
-- Zahlen wechseln mit `.contentTransition(.numericText())`.
+## Motion (`Motion`)
+- `snappy` – tap, tick off, toggle.
+- `smooth` – content that changes (lists, texts).
+- `gentle` – pages and cards appearing; `.appear(index)` fades sections in one after another.
+- Animate only in response to an action, never to show off. "Reduce Motion" is respected.
+- Numbers change with `.contentTransition(.numericText())`.
 
-## Haptik
-Leichter Impuls beim Drücken eines Hauptknopfs, Erfolg beim Erledigen und Speichern, Warnung beim Löschen. Nie bei bloßem Scrollen.
+## Haptics
+A light impulse when a main button is pressed, success when something is done or saved, a warning on delete. Never on plain scrolling.
 
-## Laden
-`Skeleton` statt Spinner, wenn Inhalt erwartet wird. `CoachThinking`, wenn der Coach etwas formuliert.
+## Loading
+`Skeleton` instead of a spinner when content is expected. `CoachThinking` while the coach is writing something.
 
-## Texte
-Deutsch, du-Form, kurz. Knöpfe mit Verb vorn („Gespräch starten“). Keine Ausrufezeichen in Bedienelementen.
+## Copy
+The app speaks German, informal "du", short. Buttons start with a verb ("Gespräch starten"). No exclamation marks in controls.
